@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link href="https://fonts.googleapis.com/css?family=Inter:400,600&display=swap" rel="stylesheet">
+    <!--
+      manifest.json provides metadata used when your web app is installed on a
+      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+    -->
+    <title>React App</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    
+    <!-- Theme Readability Test Script (Development Only) -->
+    <script>
+      // Theme Readability Test Script
+      function testThemeReadability() {
+        console.log('🎨 Testing Theme Readability...\n');
+
+        // Test 1: Check if theme variables are properly defined
+        console.log('1. CSS Variable Definitions:');
+        const requiredVariables = [
+          '--primary-bg', '--secondary-bg', '--text-color', '--border-color',
+          '--input-bg', '--input-text', '--text-muted', '--accent-color',
+          '--chatgpt-bg', '--chatgpt-text', '--chatgpt-user-bubble', '--chatgpt-bot-bubble'
+        ];
+
+        const rootStyles = getComputedStyle(document.documentElement);
+        const missingVariables = [];
+
+        requiredVariables.forEach(variable => {
+          const value = rootStyles.getPropertyValue(variable);
+          if (!value || value.trim() === '') {
+            missingVariables.push(variable);
+          }
+        });
+
+        if (missingVariables.length === 0) {
+          console.log('✅ All required CSS variables are defined');
+        } else {
+          console.log('❌ Missing CSS variables:', missingVariables);
+        }
+
+        // Test 2: Check current theme
+        console.log('\n2. Current Theme:');
+        const currentTheme = document.body.className;
+        console.log(`Active theme: ${currentTheme || 'dark (default)'}`);
+
+        // Test 3: Check key components
+        console.log('\n3. Component Checks:');
+        const components = [
+          '.chat-bubble', '.input-container', '.model-selector-button',
+          '.token-counter', '.quick-token-display', '.sidebar', '.modern-button'
+        ];
+
+        components.forEach(selector => {
+          const elements = document.querySelectorAll(selector);
+          console.log(`${selector}: ${elements.length} element(s) found`);
+        });
+
+        console.log('\n🎯 Theme Readability Test Complete!');
+        console.log('💡 Run this function anytime to check theme status');
+      }
+
+      // Make function available globally
+      window.testThemeReadability = testThemeReadability;
+      
+      // Auto-run test after page loads (development only)
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        setTimeout(() => {
+          console.log('🔍 Auto-running theme readability test...');
+          testThemeReadability();
+        }, 2000);
+      }
+    </script>
+    
+    <!--
+      This HTML file is a template.
+      If you open it directly in the browser, you will see an empty page.
+
+      You can add webfonts, meta tags, or analytics to this file.
+      The build step will place the bundled scripts into the <body> tag.
+
+      To begin the development, run `npm start` or `yarn start`.
+      To create a production bundle, use `npm run build` or `yarn build`.
+    -->
+  </body>
+</html>
