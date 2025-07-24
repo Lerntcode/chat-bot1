@@ -40,7 +40,7 @@ const AdminPanel = ({ isVisible, onClose }) => {
 
       const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${endpoint}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'x-auth-token': token,
           'Content-Type': 'application/json'
         }
       });
@@ -123,7 +123,7 @@ const AdminPanel = ({ isVisible, onClose }) => {
               </tr>
             </thead>
             <tbody>
-              {data.users?.map(user => (
+              {(Array.isArray(data.users) ? data.users : []).map(user => (
                 <tr key={user.id}>
                   <td>{user.email}</td>
                   <td>{user.name || 'N/A'}</td>
@@ -199,19 +199,20 @@ const AdminPanel = ({ isVisible, onClose }) => {
           <div className="analytics-card">
             <h4>User Growth (30 days)</h4>
             <div className="chart-placeholder">
-              Chart would be rendered here
+              {/* Defensive: check if data.userAnalytics is an array */}
+              {Array.isArray(data.userAnalytics) ? `Data points: ${data.userAnalytics.length}` : 'No data'}
             </div>
           </div>
           <div className="analytics-card">
             <h4>Revenue Analytics</h4>
             <div className="chart-placeholder">
-              Chart would be rendered here
+              {Array.isArray(data.revenueAnalytics) ? `Data points: ${data.revenueAnalytics.length}` : 'No data'}
             </div>
           </div>
           <div className="analytics-card">
             <h4>Model Usage</h4>
             <div className="chart-placeholder">
-              Chart would be rendered here
+              {Array.isArray(data.modelAnalytics) ? `Data points: ${data.modelAnalytics.length}` : 'No data'}
             </div>
           </div>
         </div>
@@ -240,7 +241,7 @@ const AdminPanel = ({ isVisible, onClose }) => {
               </tr>
             </thead>
             <tbody>
-              {data.payments?.map(payment => (
+              {(Array.isArray(data.payments) ? data.payments : []).map(payment => (
                 <tr key={payment.id}>
                   <td>{payment.User?.email || 'N/A'}</td>
                   <td>${payment.amount}</td>

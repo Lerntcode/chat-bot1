@@ -54,6 +54,8 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
     ]
   };
 
+  const isProActive = userStatus?.isPaidUser && userStatus?.paidUntil && new Date(userStatus.paidUntil) > new Date();
+
   return (
     <Container className="pricing-page mt-5">
       <div className="text-center mb-5">
@@ -63,8 +65,8 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
         {/* Current Status */}
         {userStatus && (
           <div className="current-status mb-4">
-            <Badge bg={userStatus.isPaidUser ? "success" : "info"} className="status-badge">
-              {userStatus.isPaidUser ? "Pro Plan Active" : "Free Plan"}
+            <Badge bg={isProActive ? "success" : "info"} className="status-badge">
+              {isProActive ? "Pro Plan Active" : "Free Plan"}
             </Badge>
             <div className="token-info">
               <div className="token-breakdown-pricing">
@@ -96,7 +98,7 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
       <Row className="justify-content-center">
         {/* Free Plan Card */}
         <Col lg={5} md={6} className="mb-4">
-          <Card className={`h-100 pricing-card ${!userStatus?.isPaidUser ? 'current-plan' : ''}`}>
+          <Card className={`h-100 pricing-card ${!isProActive ? 'current-plan' : ''}`}>
             <Card.Header className="text-center">
               <h3 className="plan-title">Free Plan</h3>
               <div className="price">$0</div>
@@ -115,42 +117,41 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
               </div>
               
               <div className="mt-auto pt-4">
-                {!userStatus?.isPaidUser ? (
-                  <div className="action-buttons">
-                    <div className="mb-3">
-                      <label className="form-label">Choose model for ad reward:</label>
-                      <div className="model-selector-pricing">
-                        {adModels.map(model => (
-                          <div 
-                            key={model.id}
-                            className={`model-option-pricing ${selectedAdModel === model.id ? 'selected' : ''}`}
-                            onClick={() => setSelectedAdModel(model.id)}
-                          >
-                            <div className="model-info-pricing">
-                              <div className="model-name-pricing">{model.name}</div>
-                              <div className="model-reward-pricing">
-                                {model.reward.toLocaleString()} tokens (~{Math.floor(model.reward / model.cost)} messages)
-                              </div>
+                <div className="action-buttons">
+                  <div className="mb-3">
+                    <label className="form-label">Choose model for ad reward:</label>
+                    <div className="model-selector-pricing">
+                      {adModels.map(model => (
+                        <div 
+                          key={model.id}
+                          className={`model-option-pricing ${selectedAdModel === model.id ? 'selected' : ''}`}
+                          onClick={() => setSelectedAdModel(model.id)}
+                        >
+                          <div className="model-info-pricing">
+                            <div className="model-name-pricing">{model.name}</div>
+                            <div className="model-reward-pricing">
+                              {model.reward.toLocaleString()} tokens (~{Math.floor(model.reward / model.cost)} messages)
                             </div>
-                            {selectedAdModel === model.id && <i className="fas fa-check"></i>}
                           </div>
-                        ))}
-                      </div>
+                          {selectedAdModel === model.id && <i className="fas fa-check"></i>}
+                        </div>
+                      ))}
                     </div>
-                    <Button 
-                      variant="success" 
-                      onClick={handleWatchAdClick}
-                      disabled={isWatchingAd}
-                      className="w-100 mb-2"
-                    >
-                      {isWatchingAd ? 'Watching Ad...' : `Watch Ad for ${adModels.find(m => m.id === selectedAdModel)?.reward.toLocaleString()} Tokens`}
-                  </Button>
-                    <small className="text-muted d-block">
-                      Watch ads to earn tokens for your chosen model
-                    </small>
                   </div>
-                ) : (
-                  <div className="current-plan-indicator">
+                  <Button 
+                    variant="success" 
+                    onClick={handleWatchAdClick}
+                    disabled={isWatchingAd}
+                    className="w-100 mb-2"
+                  >
+                    {isWatchingAd ? 'Watching Ad...' : `Watch Ad for ${adModels.find(m => m.id === selectedAdModel)?.reward.toLocaleString()} Tokens`}
+                </Button>
+                  <small className="text-muted d-block">
+                    Watch ads to earn tokens for your chosen model
+                  </small>
+                </div>
+                {isProActive && (
+                  <div className="current-plan-indicator mt-3">
                     <Badge bg="success" className="w-100">Current Plan</Badge>
                   </div>
                 )}
@@ -161,7 +162,7 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
 
         {/* Pro Plan Card */}
         <Col lg={5} md={6} className="mb-4">
-          <Card className={`h-100 pricing-card pro-plan ${userStatus?.isPaidUser ? 'current-plan' : ''}`}>
+          <Card className={`h-100 pricing-card pro-plan ${isProActive ? 'current-plan' : ''}`}>
             <Card.Header className="text-center">
               <div className="popular-badge">Most Popular</div>
               <h3 className="plan-title">Pro Plan</h3>
@@ -181,7 +182,7 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
               </div>
               
               <div className="mt-auto pt-4">
-                {!userStatus?.isPaidUser ? (
+                {!isProActive ? (
                   <Button 
                     variant="primary" 
                     onClick={handlePurchaseTier}
