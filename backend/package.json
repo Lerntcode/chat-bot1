@@ -23,6 +23,7 @@
     "mammoth": "^1.9.1",
     "multer": "^2.0.1",
     "mysql2": "^3.14.1",
+    "openai": "^5.10.2",
     "pdf-parse": "^1.1.1",
     "sequelize": "^6.37.7",
     "swagger-jsdoc": "^6.2.8",

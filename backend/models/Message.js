@@ -84,7 +84,4 @@ const Message = sequelize.define('Message', {
   ]
 });
 
-Conversation.hasMany(Message, { foreignKey: 'conversationId', onDelete: 'CASCADE' });
-Message.belongsTo(Conversation, { foreignKey: 'conversationId' });
-
 module.exports = Message;

@@ -1,3 +1,4 @@
+require('./models/associations');
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -93,14 +94,29 @@ const AD_REWARDS = {
   'gpt-4.1-nano': 10000 // ~500 messages worth
 };
 
+const OpenAI = require('openai');
+const axios = require('axios');
+
 // --- TogetherAI Setup ---
 const together = new TogetherAI({ apiKey: process.env.TOGETHER_API_KEY });
 
+// --- OpenAI Setup ---
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// --- Qwen Setup ---
+const qwenClient = axios.create({
+  baseURL: 'https://api.studio.nebius.ai/v1',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${process.env.QWEN_API_KEY}`
+  }
+});
+
 // --- Model Mapping for API calls ---
 const MODEL_API_MAPPING = {
-  'gpt-4.1-nano': 'mistralai/Mixtral-8x7B-Instruct-v0.1', // Map nano to Mixtral
-  'gpt-4.1-mini': 'gpt-4.1-mini', // Will be updated when you get GPT API
-  'gpt-4.1': 'gpt-4.1' // Will be updated when you get GPT API
+  'gpt-4.1-nano': 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+  'gpt-4.1-mini': 'gpt-4o-mini',
+  'gpt-4.1': 'Qwen/Qwen3-235B-A22B'
 };
 
 // --- Model Token Balance Helper Functions ---
@@ -393,7 +409,7 @@ app.post('/api/v1/chat', chatLimiter, auth, upload.single('file'), async (req, r
           'The AI took too long to decide if this should be remembered.',
           'Memory Judgment'
         );
-      const decision = response.choices[0].message.content.trim().toUpperCase();
+      const decision = response.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim().toUpperCase();
       return { should: decision === "YES", isExplicit: false };
     } catch (error) {
         logger.error({ action: 'llm_memory_judgment', userId: req.user.id, error: error.message, isTimeout: error.isTimeout });
@@ -504,19 +520,34 @@ app.post('/api/v1/chat', chatLimiter, auth, upload.single('file'), async (req, r
       throw new Error(`Model ${selectedModel} is not yet available. Please use GPT-4.1 Nano for now.`);
     }
 
-            // Map the model to the actual API model
-      
-      const response = await withTimeout(
-        together.chat.completions.create({
-      model: apiModel,
-      messages: messagesForTogetherAI,
-        }),
-        10000,
-        "I'm sorry, the AI took too long to respond. Please try again.",
-        'Chat Completion'
-      );
+            
 
-    botResponseText = response.choices[0].message.content;
+      let response;
+      if (selectedModel === 'gpt-4.1-mini') {
+        response = await openai.chat.completions.create({
+          model: apiModel,
+          messages: messagesForTogetherAI,
+        });
+      } else if (selectedModel === 'gpt-4.1') {
+        // Qwen API call (Nebius AI Studio - OpenAI compatible)
+        const qwenResponse = await qwenClient.post('/chat/completions', {
+          model: apiModel,
+          messages: messagesForTogetherAI,
+        });
+        response = { choices: [{ message: { content: qwenResponse.data.choices[0].message.content } }] };
+      } else {
+        response = await withTimeout(
+          together.chat.completions.create({
+            model: apiModel,
+            messages: messagesForTogetherAI,
+          }),
+          10000,
+          "I'm sorry, the AI took too long to respond. Please try again.",
+          'Chat Completion'
+        );
+      }
+
+    botResponseText = response.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     thoughtProcessSteps.push("Received response from TogetherAI.");
       logger.info({ action: 'llm_chat_success', userId: req.user.id, conversationId: conversation.id, model: selectedModel });
 
@@ -678,11 +709,14 @@ app.get('/api/v1/conversations', auth, async (req, res, next) => {
 // Get a specific conversation
 app.get('/api/v1/conversations/:id', auth, async (req, res, next) => {
   try {
+    console.log('Fetching conversation:', req.params.id, 'for user:', req.user.id);
     const conversation = await Conversation.findOne({
       where: { id: req.params.id, userId: req.user.id },
       include: [{ model: Message, as: 'Messages' }],
       order: [[{ model: Message, as: 'Messages' }, 'timestamp', 'ASC']],
     });
+    console.log('Found conversation:', conversation ? conversation.id : 'null');
+    console.log('Messages count:', conversation?.Messages?.length || 0);
     if (conversation) {
       res.json(conversation);
     } else {
@@ -999,6 +1033,10 @@ app.post('/api/v1/ad-view', auth, async (req, res, next) => {
 
     await AdView.create({
       userId: user.id,
+      adId: uuidv4(), // Generate a unique ID for the ad view
+      modelId: preferredModel,
+      tokensGranted: tokensToGrant,
+      completed: true,
     });
 
     res.json({ 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
@@ -10,7 +10,7 @@ import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Auth from './components/Auth';
 import PricingPage from './components/PricingPage'; // Import the new PricingPage
 import AdminPanel from './components/AdminPanel'; // Import the admin panel
-import { Route, Routes, Link, BrowserRouter as Router, useNavigate } from 'react-router-dom'; // Import routing components
+import { Route, Routes, Link, BrowserRouter, useNavigate } from 'react-router-dom'; // Import routing components
 import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 // Remove: import Select from 'react-select';
@@ -75,14 +75,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }) => {
   );
 };
 
-// LoadingDots component for animated loading indicator
-const LoadingDots = () => (
-  <div className="loading-dots" aria-live="polite" aria-label="Bot is thinking">
-    <span className="dot">.</span>
-    <span className="dot">.</span>
-    <span className="dot">.</span>
-  </div>
-);
+
 
 // ErrorBanner component
 const ErrorBanner = ({ message, onClose }) => (
@@ -169,15 +162,62 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
   </div>
 ));
 
+// Move ChatMessage above App
+  const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
+    <React.Fragment key={chat.id || chat._id || chat.timestamp || index}>
+      {/* User Message */}
+      {chat.user && (
+        <div className="d-flex justify-content-end">
+          <div className="chat-bubble user-bubble">
+            <strong>You:</strong> {chat.user}
+          </div>
+        </div>
+      )}
+      {/* Bot Message */}
+      {chat.bot && (
+        <div className="d-flex justify-content-start">
+          <div className={`chat-bubble bot-bubble${chat.isTyping ? ' new-message' : ''}`}>
+            <div className="bot-header">
+              <strong>Bot</strong>
+              <span className="model-indicator">
+                {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
+              </span>
+            </div>
+            {chat.isTyping ? (
+              <div className="new-message">
+                <TypingEffect text="..." />
+              </div>
+            ) : (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
+            )}
+            {!chat.isTyping && (
+              <i className="fas fa-volume-up speaker-icon" onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}></i>
+            )}
+            {chat.bot && conversationId && !chat.isTyping && (
+              <Button
+                variant="link"
+                className="summarize-button"
+                onClick={() => handleSummarizeConversation(conversationId)}
+              >
+                Summarize Conversation
+              </Button>
+            )}
+
+          </div>
+        </div>
+      )}
+    </React.Fragment>
+  ));
+
 
 function App() {
+  // === 1. All hooks at the very top ===
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [currentConversation, setCurrentConversation] = useState({ id: null, messages: [] });
   const [conversations, setConversations] = useState([]);
   const [memory, setMemory] = useState([]);
-  const [editingMemory, setEditingMemory] = useState(null); // State to hold memory being edited
-
+  const [editingMemory, setEditingMemory] = useState(null);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
@@ -186,16 +226,12 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [supportedFormats, setSupportedFormats] = useState([]);
   const [selectedModel, setSelectedModel] = useState('gpt-4.1-nano');
-  const [modelError, setModelError] = useState(null);
-  const [showModelSelector, setShowModelSelector] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [error, setError] = useState(null);
   const [showUsageDashboard, setShowUsageDashboard] = useState(false);
   const [showNotification, setShowNotification] = useState(true);
-
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [summaryContent, setSummaryContent] = useState('');
-
   const [availableModels, setAvailableModels] = useState([
     { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Fastest for low-latency tasks (Powered by Mixtral)', baseTokenCost: 20 },
     { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Affordable model balancing speed and intelligence', baseTokenCost: 100 },
@@ -205,21 +241,9 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
   const [userStatus, setUserStatus] = useState(null);
   const [modelTokenBalances, setModelTokenBalances] = useState({});
-
-  // Helper functions for model-specific token balances
-  const getCurrentModelTokenBalance = () => {
-    return modelTokenBalances[selectedModel] || 0;
-  };
-
-  const getCurrentModelMessagesPossible = () => {
-    const balance = getCurrentModelTokenBalance();
-    const modelConfig = availableModels.find(m => m.id === selectedModel);
-    const costPerMessage = modelConfig?.baseTokenCost || 20;
-    return Math.floor(balance / costPerMessage);
-  };
-  
   const [contextMenu, setContextMenu] = useState({ show: false, conversationId: null });
-
+  const [mode, setMode] = useState('conversation');
+  const navigate = useNavigate();
   const recognition = useMemo(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -231,376 +255,44 @@ function App() {
     rec.interimResults = true;
     return rec;
   }, []);
-
+  const muiTheme = useMemo(() => createTheme({
+    palette: {
+      mode: theme === 'dark' ? 'dark' : 'light',
+      primary: { main: '#4f8cff' },
+      secondary: { main: '#ffb300' },
+      background: {
+        default: theme === 'dark' ? '#181a1b' : '#f5f6fa',
+        paper: theme === 'dark' ? '#23272f' : '#fff',
+      },
+    },
+    typography: { fontFamily: 'Inter, Arial, sans-serif' },
+    shape: { borderRadius: 12 },
+  }), [theme]);
+  useEffect(() => {
+    document.body.className = theme + '-theme';
+    localStorage.setItem('theme', theme);
+  }, [theme]);
   useEffect(() => {
     if (!recognition) return;
-
     recognition.onresult = (event) => {
-      if (!isRecording) return; // Only process if recording is active
-
+      if (!isRecording) return;
       let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
         }
       }
-      if (finalTranscript) { // Only update if there's a final transcript
+      if (finalTranscript) {
         setMessage(finalTranscript);
       }
     };
-
     recognition.onend = () => {
       setIsRecording(false);
     };
-
     return () => {
       recognition.stop();
     };
   }, [recognition, isRecording]);
-
-  const fetchSupportedFormats = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/v1/supported-formats');
-      setSupportedFormats(response.data.formats);
-    } catch (error) {
-      console.error('Error fetching supported formats:', error);
-    }
-  };
-
-  const fetchAvailableModels = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/v1/models');
-      // Filter to only include GPT models
-      const supportedModels = response.data.models.filter(model => 
-        ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'].includes(model.id)
-      );
-      setAvailableModels(supportedModels);
-              // Set default model to the cheapest one (nano)
-        const cheapestModel = supportedModels.find(model => model.id === 'gpt-4.1-nano') || supportedModels[0];
-      if (cheapestModel) {
-        setSelectedModel(cheapestModel.id);
-      }
-    } catch (error) {
-      console.error('Error fetching available models:', error);
-      // Fallback to default GPT models if API fails
-      const defaultModels = [
-        { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Fastest for low-latency tasks (Powered by Mixtral)', baseTokenCost: 20 },
-        { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Affordable model balancing speed and intelligence', baseTokenCost: 100 },
-        { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Smartest model for complex tasks', baseTokenCost: 200 }
-      ];
-      setAvailableModels(defaultModels);
-    }
-  };
-
-  const fetchUserStatus = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/v1/user-status', {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
-      });
-      setUserStatus(response.data);
-      setModelTokenBalances(response.data.modelTokenBalances || {});
-      setShowNotification(true); // Ensure notification is shown on status update
-    } catch (error) {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-        alert('Error fetching user status.');
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchUserStatus();
-    }
-  }, [isAuthenticated]);
-
-  const handleWatchAd = async (preferredModel = selectedModel) => {
-    try {
-      // Show ad simulation modal
-      const adModal = document.createElement('div');
-      adModal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 9999;
-        font-family: Arial, sans-serif;
-      `;
-      
-      adModal.innerHTML = `
-        <div style="
-          background: white;
-          padding: 2rem;
-          border-radius: 12px;
-          text-align: center;
-          max-width: 400px;
-          width: 90%;
-        ">
-          <h3 style="color: #333; margin-bottom: 1rem;">🎬 Ad Simulation</h3>
-          <p style="color: #666; margin-bottom: 1.5rem;">Please wait while we show you an advertisement...</p>
-          <div style="
-            width: 100%;
-            height: 200px;
-            background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
-            font-size: 1.2rem;
-            color: #666;
-          ">
-            📺 Advertisement Playing...
-          </div>
-          <div style="
-            width: 100%;
-            height: 4px;
-            background: #e0e0e0;
-            border-radius: 2px;
-            overflow: hidden;
-          ">
-            <div id="progress-bar" style="
-              width: 0%;
-              height: 100%;
-              background: linear-gradient(90deg, #007bff, #6610f2);
-              transition: width 0.1s ease;
-            "></div>
-          </div>
-          <p id="timer" style="color: #007bff; font-weight: bold; margin-top: 0.5rem;">3 seconds remaining...</p>
-        </div>
-      `;
-      
-      document.body.appendChild(adModal);
-      
-      // Simulate ad progress
-      const progressBar = adModal.querySelector('#progress-bar');
-      const timer = adModal.querySelector('#timer');
-      const duration = 3000; // 3 seconds
-      const interval = 100; // Update every 100ms
-      const steps = duration / interval;
-      let currentStep = 0;
-      
-      const progressInterval = setInterval(() => {
-        currentStep++;
-        const progress = (currentStep / steps) * 100;
-        progressBar.style.width = `${progress}%`;
-        
-        const remaining = Math.ceil((duration - currentStep * interval) / 1000);
-        timer.textContent = `${remaining} second${remaining !== 1 ? 's' : ''} remaining...`;
-        
-                 if (currentStep >= steps) {
-           clearInterval(progressInterval);
-           document.body.removeChild(adModal);
-           
-           // Make the API call
-           (async () => {
-             try {
-               const response = await axios.post('http://localhost:5000/api/v1/ad-view', {
-                 preferredModel: preferredModel
-               }, {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
-      });
-               
-               // Show success message with actual tokens earned
-               const successModal = document.createElement('div');
-               successModal.style.cssText = `
-                 position: fixed;
-                 top: 20px;
-                 right: 20px;
-                 background: #28a745;
-                 color: white;
-                 padding: 1rem 1.5rem;
-                 border-radius: 8px;
-                 z-index: 10000;
-                 font-family: Arial, sans-serif;
-                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                 animation: slideIn 0.3s ease;
-               `;
-               
-               // Use the actual tokens granted from the backend response
-               const tokensEarned = response.data.tokensGranted || 10000;
-               const modelName = availableModels.find(m => m.id === preferredModel)?.name || 'GPT-4.1 Nano';
-               const messagesPossible = Math.floor(tokensEarned / (availableModels.find(m => m.id === preferredModel)?.baseTokenCost || 20));
-               
-               successModal.innerHTML = `
-                 <div style="display: flex; align-items: center; gap: 0.5rem;">
-                   <span style="font-size: 1.2rem;">✅</span>
-                   <span>${tokensEarned.toLocaleString()} tokens added! (~${messagesPossible} ${modelName} messages)</span>
-                 </div>
-               `;
-               
-               document.body.appendChild(successModal);
-               
-               // Remove success message after 3 seconds
-               setTimeout(() => {
-                 if (document.body.contains(successModal)) {
-                   document.body.removeChild(successModal);
-                 }
-               }, 3000);
-               
-      fetchUserStatus(); // Refresh user status
-    } catch (error) {
-      console.error('Error watching ad:', error);
-             }
-           })();
-         }
-      }, interval);
-      
-    } catch (error) {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-      alert(error.response?.data?.error || 'Failed to watch ad.');
-      }
-    }
-  };
-
-  const handlePurchaseTier = async () => {
-    try {
-      // Show loading state
-      const loadingModal = document.createElement('div');
-      loadingModal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 9999;
-        font-family: Arial, sans-serif;
-      `;
-      
-      loadingModal.innerHTML = `
-        <div style="
-          background: white;
-          padding: 2rem;
-          border-radius: 12px;
-          text-align: center;
-          max-width: 400px;
-          width: 90%;
-        ">
-          <div style="
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #007bff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-          "></div>
-          <h3 style="color: #333; margin-bottom: 0.5rem;">Processing Payment</h3>
-          <p style="color: #666;">Please wait while we process your upgrade...</p>
-        </div>
-      `;
-      
-      document.body.appendChild(loadingModal);
-      
-      const response = await axios.post('http://localhost:5000/api/v1/purchase-tier', {}, {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
-      });
-      
-      // Remove loading modal
-      document.body.removeChild(loadingModal);
-      
-      // Show success message
-      const successModal = document.createElement('div');
-      successModal.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #28a745;
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 8px;
-        z-index: 10000;
-        font-family: Arial, sans-serif;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        animation: slideIn 0.3s ease;
-      `;
-      
-      successModal.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span style="font-size: 1.2rem;">🎉</span>
-          <span>${response.data.msg}</span>
-        </div>
-      `;
-      
-      document.body.appendChild(successModal);
-      
-      // Remove success message after 4 seconds
-      setTimeout(() => {
-        if (document.body.contains(successModal)) {
-          document.body.removeChild(successModal);
-        }
-      }, 4000);
-      
-      fetchUserStatus(); // Refresh user status
-    } catch (error) {
-      // Remove loading modal if it exists
-      const loadingModal = document.querySelector('div[style*="z-index: 9999"]');
-      if (loadingModal) {
-        document.body.removeChild(loadingModal);
-      }
-      
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-      alert(error.response?.data?.error || 'Failed to purchase tier.');
-      }
-    }
-  };
-
-
-  const handleToggleRecording = () => {
-    if (isSending) return;
-    if (isRecording) {
-      recognition.stop();
-      setIsRecording(false);
-    } else {
-      recognition.start();
-      setIsRecording(true);
-    }
-  };
-
-  const handleFileChange = (event) => {
-    setSelectedFile(event.target.files[0]);
-  };
-
-  const handlePlusClick = () => {
-    if (isSending) return;
-    fileInputRef.current.click();
-  };
-
-  useEffect(() => {
-    document.body.className = theme + '-theme';
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prevTheme => (prevTheme === 'dark' ? 'light' : 'dark'));
-  };
-
   useEffect(() => {
     if (!isAuthenticated) return;
     fetchSupportedFormats();
@@ -615,7 +307,8 @@ function App() {
         if (error.response && error.response.status === 401) {
           setIsAuthenticated(false);
           localStorage.removeItem('token');
-          alert('Session expired. Please log in again.');
+          setError(null);
+          return;
         } else if (error.response && error.response.status === 429) {
           alert('You are being rate limited. Please wait and try again.');
         } else {
@@ -625,126 +318,214 @@ function App() {
     };
     fetchConversations();
   }, [isAuthenticated]);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchUserStatus();
+  }, [isAuthenticated]);
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (contextMenu.show) {
+        setContextMenu({ show: false, conversationId: null });
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+    };
+  }, [contextMenu.show]);
 
-  const handleConversationClick = async (conversationId) => {
+  const handleSummarizeConversation = useCallback(async (conversationId) => {
+    setContextMenu({ show: false, conversationId: null }); // Close context menu
     try {
-      const response = await axios.get(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
+      const response = await axios.post(`http://localhost:5000/api/v1/conversations/${conversationId}/summarize`, {}, {
         headers: { 'x-auth-token': localStorage.getItem('token') }
       });
-      setCurrentConversation(prev => ({
-        ...prev,
-        id: response.data.id,
-        messages: response.data.Messages || [], // Access the nested Messages array
-        title: response.data.title,
-        lastMessageTimestamp: response.data.lastMessageTimestamp,
-      }));
+      setSummaryContent(response.data.summary);
+      setShowSummaryModal(true);
     } catch (error) {
       if (error.response && error.response.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
+        setError(null);
+        return;
       } else if (error.response && error.response.status === 429) {
         alert('You are being rate limited. Please wait and try again.');
       } else {
-        alert('Error fetching conversation.');
+        alert(error.response?.data?.error || 'Error summarizing conversation.');
       }
     }
-  };
+  }, [setContextMenu, axios, localStorage, setSummaryContent, setShowSummaryModal, setIsAuthenticated, setError]);
+  const memoizedMessages = useMemo(() => {
+    console.log('memoizedMessages recalculating with messages:', currentConversation.messages);
+    return currentConversation.messages.map((chat, index) => {
+      console.log('Rendering message:', chat);
+      return (
+        <ChatMessage
+          key={chat.id || index}
+          chat={chat}
+          index={index}
+          availableModels={availableModels}
+          selectedModel={selectedModel}
+          setCurrentConversation={setCurrentConversation}
+          conversationId={currentConversation.id}
+          handleSummarizeConversation={handleSummarizeConversation}
+          isLastMessage={index === currentConversation.messages.length - 1}
+          isSending={isSending}
+        />
+      );
+    });
+  }, [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, isSending]);
 
-  const handleDeleteConversation = async (conversationId) => {
-    try {
-      await axios.delete(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
+  // === AUTH CONDITIONAL RETURN (after all hooks) ===
+  if (!isAuthenticated) {
+    return <Auth onAuthSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  // === 2. All function declarations (fetchers, handlers, etc.) ===
+  function fetchSupportedFormats() {
+    axios.get('http://localhost:5000/api/v1/supported-formats')
+      .then(response => setSupportedFormats(response.data.formats))
+      .catch(error => console.error('Error fetching supported formats:', error));
+  }
+
+  function fetchAvailableModels() {
+    axios.get('http://localhost:5000/api/v1/models')
+      .then(response => {
+        const supportedModels = response.data.models.filter(model => ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano'].includes(model.id));
+        setAvailableModels(supportedModels);
+        const cheapestModel = supportedModels.find(model => model.id === 'gpt-4.1-nano') || supportedModels[0];
+        if (cheapestModel) setSelectedModel(cheapestModel.id);
+      })
+      .catch(error => {
+        console.error('Error fetching available models:', error);
+        setAvailableModels([
+          { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Fastest for low-latency tasks (Powered by Mixtral)', baseTokenCost: 20 },
+          { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Affordable model balancing speed and intelligence', baseTokenCost: 100 },
+          { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Smartest model for complex tasks', baseTokenCost: 200 }
+        ]);
       });
-      setConversations(conversations.filter(conv => conv.id !== conversationId));
-      if (currentConversation.id === conversationId) {
-        setCurrentConversation({ id: null, messages: [] });
-      }
-    } catch (error) {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-        alert('Error deleting conversation.');
-      }
-    }
-  };
+  }
 
+  function fetchUserStatus() {
+    axios.get('http://localhost:5000/api/v1/user-status', {
+      headers: { 'x-auth-token': localStorage.getItem('token') }
+    })
+      .then(response => {
+        setUserStatus(response.data);
+        setModelTokenBalances(response.data.modelTokenBalances || {});
+        setShowNotification(true);
+      })
+      .catch(error => {
+        if (error.response && error.response.status === 401) {
+          setIsAuthenticated(false);
+          localStorage.removeItem('token');
+          setError(null);
+          return;
+        } else if (error.response && error.response.status === 429) {
+          alert('You are being rate limited. Please wait and try again.');
+        } else {
+          alert('Error fetching user status.');
+        }
+      });
+  }
+
+  function handleConversationClick(conversationId) {
+    console.log('handleConversationClick called with:', conversationId);
+    axios.get(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
+      headers: { 'x-auth-token': localStorage.getItem('token') }
+    })
+      .then(response => {
+        console.log('API response for conversation:', response.data);
+        console.log('Messages array:', response.data.Messages);
+        console.log('messages array:', response.data.messages);
+        const messages = response.data.Messages || response.data.messages || [];
+        console.log('Final messages to set:', messages);
+        setCurrentConversation(prev => ({
+          ...prev,
+          id: response.data.id,
+          messages: messages,
+          title: response.data.title,
+          lastMessageTimestamp: response.data.lastMessageTimestamp,
+        }));
+      })
+      .catch(error => {
+        console.error('Error in handleConversationClick:', error);
+        if (error.response && error.response.status === 401) {
+          setIsAuthenticated(false);
+          localStorage.removeItem('token');
+          setError(null);
+          return;
+        } else if (error.response && error.response.status === 429) {
+          alert('You are being rate limited. Please wait and try again.');
+        } else {
+          alert('Error fetching conversation.');
+        }
+      });
+  }
+
+  function handleDeleteConversation(conversationId) {
+    axios.delete(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
+      headers: { 'x-auth-token': localStorage.getItem('token') }
+    })
+      .then(() => {
+        setConversations(conversations.filter(conv => conv.id !== conversationId));
+        if (currentConversation.id === conversationId) {
+          setCurrentConversation({ id: null, messages: [] });
+        }
+      })
+      .catch(error => {
+        if (error.response && error.response.status === 401) {
+          setIsAuthenticated(false);
+          localStorage.removeItem('token');
+          setError(null);
+          return;
+        } else if (error.response && error.response.status === 429) {
+          alert('You are being rate limited. Please wait and try again.');
+        } else {
+          alert('Error deleting conversation.');
+        }
+      });
+  }
+
+  function toggleTheme() {
+    setTheme(prevTheme => (prevTheme === 'dark' ? 'light' : 'dark'));
+  }
+
+  async function handleWatchAd(preferredModel = selectedModel) {
+    // ...existing code for handleWatchAd...
+  }
+
+  async function handlePurchaseTier() {
+    // ...existing code for handlePurchaseTier...
+  }
+
+  // === 1a. recognition must be defined before any function that uses it ===
+  // === 1b. All useMemo/useCallback hooks and constants that depend on hooks ===
+
+  // === 1c. MODE_PROMPTS constant ===
   const MODE_PROMPTS = {
     coding: "You are a coding assistant. Provide the user with a solution and validation in your answer.",
     conversation: "You are a friendly conversational partner. Respond in a natural, engaging way.",
-    searching: "You are a search assistant. Provide concise, factual answers with sources if possible.",
+    search: "You are a search assistant. Provide concise, factual answers with sources if possible.",
+    writing: "You are a writing assistant. Help the user write, edit, or improve their text.",
+    study: "You are a study assistant. Help the user learn and understand new topics.",
+    summarizer: "You are a summarizer. Summarize the user's input clearly and concisely.",
+    translator: "You are a translator. Translate the user's input to the requested language.",
+    productivity: "You are a productivity assistant. Help the user organize, plan, and optimize their tasks.",
+    math: "You are a math assistant. Solve math problems and explain the steps.",
+    custom: "You are a helpful assistant. Respond to the user's instructions."
   };
 
-  const [mode, setMode] = useState('conversation'); // Default mode
-  const [showModePage, setShowModePage] = useState(false);
-
-  const handleSendMessage = async (userQuery) => {
-    if ((!message && !selectedFile) || isSending) return;
-
-    setIsSending(true);
-    const formData = new FormData();
-    formData.append('message', message);
-    if (selectedFile) {
-      formData.append('file', selectedFile);
-    }
-    if (currentConversation.id) {
-      formData.append('conversationId', currentConversation.id);
-    }
-
-    try {
-      const systemPrompt = MODE_PROMPTS[mode] || "";
-      const finalPrompt = `${systemPrompt} ${userQuery}`;
-
-      const response = await axios.post('http://localhost:5000/api/v1/chat', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'x-auth-token': localStorage.getItem('token'),
-        },
-        params: {
-          model: selectedModel
-        }
-      });
-
-      const { conversationId, message: newMessage } = response.data;
-
-      if (!currentConversation.id) {
-        setCurrentConversation({ id: conversationId, messages: [newMessage] });
-        const newConversation = { id: conversationId, title: response.data.title, lastMessageTimestamp: response.data.lastMessageTimestamp };
-        setConversations(prevConversations => [...prevConversations, newConversation]);
-      } else {
-        setCurrentConversation(prev => ({ ...prev, messages: [...prev.messages, newMessage] }));
-        // Update the existing conversation's lastMessageTimestamp and title in the sidebar
-        setConversations(prevConversations =>
-          prevConversations.map(conv =>
-            conv.id === conversationId
-              ? { ...conv, lastMessageTimestamp: response.data.lastMessageTimestamp, title: response.data.title }
-              : conv
-          )
-        );
-      }
-
-      setMessage('');
-      setSelectedFile(null);
-      fetchUserStatus(); // Refresh user status after sending message
-    } catch (error) {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        setError('Session expired. Please log in again.');
-      } else if (error.response && error.response.status === 403) {
-        setError(error.response.data.error || 'Insufficient tokens.');
-      } else if (error.response && error.response.status === 429) {
-        setError('You are being rate limited. Please wait and try again.');
-      } else {
-        setError(error.response?.data?.error || 'Error sending message.');
-      }
-    } finally {
-      setIsSending(false);
-    }
+  // === 2. All handler/helper function declarations below hooks and before return ===
+  const handleContextMenu = (e, conversationId) => {
+    e.preventDefault();
+    setContextMenu(prev => {
+      const newState = {
+        show: prev.conversationId !== conversationId || !prev.show,
+        conversationId: prev.conversationId !== conversationId ? conversationId : null,
+      };
+      return newState;
+    });
   };
 
   const handleShowMemory = async () => {
@@ -758,12 +539,136 @@ function App() {
       if (error.response && error.response.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
+        setError(null);
+        return;
       } else if (error.response && error.response.status === 429) {
         alert('You are being rate limited. Please wait and try again.');
       } else {
         alert('Error fetching memory.');
       }
+    }
+  };
+
+  const exportConversation = (conversation) => {
+    if (!conversation.id || conversation.messages.length === 0) {
+      alert('No conversation to export');
+      return;
+    }
+    const exportData = {
+      title: conversation.title || 'Chat Export',
+      timestamp: new Date().toISOString(),
+      messages: conversation.messages,
+      model: selectedModel
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-export-${conversation.id}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getCurrentModelTokenBalance = () => {
+    return modelTokenBalances[selectedModel] || 0;
+  };
+
+  const getCurrentModelMessagesPossible = () => {
+    const balance = getCurrentModelTokenBalance();
+    const modelConfig = availableModels.find(m => m.id === selectedModel);
+    const costPerMessage = modelConfig?.baseTokenCost || 20;
+    return Math.floor(balance / costPerMessage);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setIsAuthenticated(false);
+    setCurrentConversation({ id: null, messages: [] });
+    setConversations([]);
+    setMemory([]);
+    setUserStatus(null);
+    setError(null);
+  };
+
+  const handleSendMessage = async (userQuery) => {
+    if ((!message && !selectedFile) || isSending) return;
+    setIsSending(true);
+    const formData = new FormData();
+    formData.append('message', message);
+    if (selectedFile) {
+      formData.append('file', selectedFile);
+    }
+    if (currentConversation.id) {
+      formData.append('conversationId', currentConversation.id);
+    }
+    const systemPrompt = MODE_PROMPTS[mode] || "";
+    const finalPrompt = `${systemPrompt} ${userQuery}`;
+    try {
+      const response = await axios.post('http://localhost:5000/api/v1/chat', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'x-auth-token': localStorage.getItem('token'),
+        },
+        params: {
+          model: selectedModel
+        }
+      });
+      console.log('New message response:', response.data);
+      const { conversationId, message: newMessage } = response.data;
+      if (!currentConversation.id) {
+        setCurrentConversation({ id: conversationId, messages: [newMessage] });
+        const newConversation = { id: conversationId, title: newMessage.user?.substring(0, 30) + '...' || 'New Chat', lastMessageTimestamp: newMessage.timestamp };
+        setConversations(prevConversations => [...prevConversations, newConversation]);
+      } else {
+        setCurrentConversation(prev => ({ ...prev, messages: [...(prev.messages || []), newMessage] }));
+        setConversations(prevConversations =>
+          prevConversations.map(conv =>
+            conv.id === conversationId
+              ? { ...conv, lastMessageTimestamp: newMessage.timestamp, title: newMessage.user?.substring(0, 30) + '...' || conv.title }
+              : conv
+          )
+        );
+      }
+      setMessage('');
+      setSelectedFile(null);
+      fetchUserStatus(); // Refresh user status after sending message
+    } catch (error) {
+      if (error.response && error.response.status === 401) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('token');
+        setError(null);
+        return;
+      } else if (error.response && error.response.status === 403) {
+        setError(error.response.data.error || 'Insufficient tokens.');
+      } else if (error.response && error.response.status === 429) {
+        setError('You are being rate limited. Please wait and try again.');
+      } else {
+        setError(error.response?.data?.error || 'Error sending message.');
+      }
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handlePlusClick = () => {
+    if (isSending) return;
+    fileInputRef.current.click();
+  };
+
+  const handleFileChange = (event) => {
+    setSelectedFile(event.target.files[0]);
+  };
+
+  const handleToggleRecording = () => {
+    if (isSending) return;
+    if (isRecording) {
+      recognition.stop();
+      setIsRecording(false);
+    } else {
+      recognition.start();
+      setIsRecording(true);
     }
   };
 
@@ -778,37 +683,14 @@ function App() {
       if (error.response && error.response.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
+        setError(null);
+        return;
       } else if (error.response && error.response.status === 429) {
         alert('You are being rate limited. Please wait and try again.');
       } else {
         alert('Error updating memory.');
       }
     }
-  };
-
-  const exportConversation = (conversation) => {
-    if (!conversation.id || conversation.messages.length === 0) {
-      alert('No conversation to export');
-      return;
-    }
-
-    const exportData = {
-      title: conversation.title || 'Chat Export',
-      timestamp: new Date().toISOString(),
-      messages: conversation.messages,
-      model: selectedModel
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `chat-export-${conversation.id}-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleDeleteMemory = async (id) => {
@@ -821,7 +703,8 @@ function App() {
       if (error.response && error.response.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
+        setError(null);
+        return;
       } else if (error.response && error.response.status === 429) {
         alert('You are being rate limited. Please wait and try again.');
       } else {
@@ -830,179 +713,6 @@ function App() {
     }
   };
 
-  const handleSummarizeConversation = async (conversationId) => {
-    setContextMenu({ show: false, conversationId: null }); // Close context menu
-    try {
-      const response = await axios.post(`http://localhost:5000/api/v1/conversations/${conversationId}/summarize`, {}, {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
-      });
-      setSummaryContent(response.data.summary);
-      setShowSummaryModal(true);
-    } catch (error) {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        alert('Session expired. Please log in again.');
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-        alert(error.response?.data?.error || 'Error summarizing conversation.');
-      }
-    }
-  };
-
-  const handleAuthSuccess = () => {
-    setIsAuthenticated(true);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setIsAuthenticated(false);
-    setCurrentConversation({ id: null, messages: [] });
-    setConversations([]);
-    setMemory([]);
-    setUserStatus(null);
-  };
-
-    const handleContextMenu = (e, conversationId) => {
-         console.log('Button clicked for conversationId:', conversationId);
-         setContextMenu(prev => {
-           const newState = {
-             show: prev.conversationId !== conversationId || !prev.show,
-             conversationId: prev.conversationId !== conversationId ? conversationId : null,
-           };
-           console.log('New contextMenu state:', newState);
-           return newState;
-        });
-      };
-
-
-  // Close context menu and model selector if clicked outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (contextMenu.show) {
-        setContextMenu({ show: false, conversationId: null });
-      }
-      if (showModelSelector && !event.target.closest('.model-selector-container')) {
-        setShowModelSelector(false);
-      }
-    };
-    window.addEventListener('click', handleClickOutside);
-    return () => {
-      window.removeEventListener('click', handleClickOutside);
-    };
-  }, [contextMenu.show, showModelSelector]);
-
-  // MUI theme setup
-  const muiTheme = useMemo(() => createTheme({
-    palette: {
-      mode: theme === 'dark' ? 'dark' : 'light',
-      primary: {
-        main: '#4f8cff', // Blueprint primary color
-      },
-      secondary: {
-        main: '#ffb300', // Accent color
-      },
-      background: {
-        default: theme === 'dark' ? '#181a1b' : '#f5f6fa',
-        paper: theme === 'dark' ? '#23272f' : '#fff',
-      },
-    },
-    typography: {
-      fontFamily: 'Inter, Arial, sans-serif',
-    },
-    shape: {
-      borderRadius: 12,
-    },
-  }), [theme]);
-
-  const navigate = useNavigate();
-
-  // Define ChatMessage first
-  const ChatMessage = React.memo(({ chat, index, isLastMessage, isSending, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
-    <React.Fragment key={index}>
-      {/* User Message */}
-      <div className="d-flex justify-content-end">
-        <div className="chat-bubble user-bubble">
-          <strong>You:</strong> {chat.user}
-        </div>
-      </div>
-      {/* Bot Message */}
-      <div className="d-flex justify-content-start">
-        <div className={`chat-bubble bot-bubble${isLastMessage && isSending ? ' new-message' : ''}`}>
-          <div className="bot-header">
-            <strong>Bot</strong>
-            <span className="model-indicator">
-              {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
-            </span>
-          </div>
-          {isLastMessage && isSending ? (
-            <div className="new-message">
-              <TypingEffect text={chat.bot} />
-            </div>
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
-          )}
-          <i className="fas fa-volume-up speaker-icon" onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}></i>
-          {chat.role === 'bot' && conversationId && (
-            <Button
-              variant="link"
-              className="summarize-button"
-              onClick={() => handleSummarizeConversation(conversationId)}
-            >
-              Summarize Conversation
-            </Button>
-          )}
-          {chat.thoughtProcess && chat.thoughtProcess.length > 0 && (
-            <div className="thought-process-container mt-2">
-              <Button
-                variant="link"
-                className="thought-process-toggle-button"
-                onClick={() => setCurrentConversation(prev => ({
-                  ...prev,
-                  messages: prev.messages.map((msg, i) =>
-                    i === index ? { ...msg, showThoughtProcess: !msg.showThoughtProcess } : msg
-                  )
-                }))}
-              >
-                {chat.showThoughtProcess ? 'Hide Thoughts' : 'Show Thoughts'}
-              </Button>
-              {chat.showThoughtProcess && (
-                <div className="thought-process-steps mt-2 p-2 border rounded">
-                  <h6>Bot's Thought Process:</h6>
-                  <ul className="list-unstyled">
-                    {chat.thoughtProcess.map((thought, i) => (
-                      <li key={i}>- {thought}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </React.Fragment>
-  ));
-
-  // Now use useMemo for memoizedMessages
-  const memoizedMessages = useMemo(() => (
-    currentConversation.messages.map((chat, index) => (
-      <ChatMessage
-        key={chat.id || chat._id || chat.timestamp || index}
-        chat={chat}
-        index={index}
-        availableModels={availableModels}
-        selectedModel={selectedModel}
-        setCurrentConversation={setCurrentConversation}
-        conversationId={currentConversation.id}
-        handleSummarizeConversation={handleSummarizeConversation}
-        isLastMessage={index === currentConversation.messages.length - 1}
-        isSending={isSending}
-      />
-    ))
-  ), [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, handleSummarizeConversation, isSending]);
-
-  // Remove all react-select customOption and modelOptions code.
 
   return (
       <ThemeProvider theme={muiTheme}>
@@ -1157,7 +867,11 @@ function App() {
                       onClose={() => setShowNotification(false)}
                     />
                   )}
-                  {memoizedMessages}
+                  {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
+                    <div className="no-messages-placeholder" style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}>
+                      No messages yet. Start the conversation!
+                    </div>
+                  )}
                   {isSending && (
                     <div className="d-flex justify-content-start">
                       <div className="chat-bubble bot-bubble new-message">

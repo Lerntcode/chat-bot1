@@ -76,4 +76,5 @@ const User = sequelize.define('User', {
   ]
 });
 
+// Only export User, do not set up associations here.
 module.exports = User;
