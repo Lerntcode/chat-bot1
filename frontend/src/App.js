@@ -15,31 +15,23 @@ import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 // Remove: import Select from 'react-select';
 
-const TypingEffect = ({ text, speed = 20 }) => {
-  const [displayedText, setDisplayedText] = useState('');
+const TypingEffect = ({ text }) => {
   const ref = useRef();
 
-  useEffect(() => {
-    let i = 0;
-    const timer = setInterval(() => {
-      setDisplayedText(text.substring(0, i + 1));
-      i++;
-      if (i >= text.length) {
-        clearInterval(timer);
-      }
-    }, speed);
-
-    return () => clearInterval(timer);
-  }, [text, speed]);
-
-  // Scroll to bottom on new text
+  // Scroll to bottom when the component mounts
   useEffect(() => {
     if (ref.current) {
       ref.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [displayedText]);
+  }, []);
 
-  return <div className="typing-effect" ref={ref}><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{displayedText}</ReactMarkdown></div>;
+  return (
+    <div className="typing-effect" ref={ref}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 };
 
 const CodeBlock = ({ node, inline, className, children, ...props }) => {
