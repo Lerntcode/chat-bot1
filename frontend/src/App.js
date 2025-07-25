@@ -15,23 +15,31 @@ import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 // Remove: import Select from 'react-select';
 
-const TypingEffect = ({ text }) => {
+const TypingEffect = ({ text, speed = 20 }) => {
+  const [displayedText, setDisplayedText] = useState('');
   const ref = useRef();
 
-  // Scroll to bottom when the component mounts
+  useEffect(() => {
+    let i = 0;
+    const timer = setInterval(() => {
+      setDisplayedText(text.substring(0, i + 1));
+      i++;
+      if (i >= text.length) {
+        clearInterval(timer);
+      }
+    }, speed);
+
+    return () => clearInterval(timer);
+  }, [text, speed]);
+
+  // Scroll to bottom on new text
   useEffect(() => {
     if (ref.current) {
       ref.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, []);
+  }, [displayedText]);
 
-  return (
-    <div className="typing-effect" ref={ref}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
+  return <div className="typing-effect" ref={ref}><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{displayedText}</ReactMarkdown></div>;
 };
 
 const CodeBlock = ({ node, inline, className, children, ...props }) => {
@@ -867,7 +875,7 @@ function App() {
   );
 
   // Memoized ChatMessage component
-  const ChatMessage = React.memo(({ chat, index, isLastMessage, isSending, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
+  const ChatMessage = React.memo(({ chat, index, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
     <React.Fragment key={index}>
       {/* User Message */}
       <div className="d-flex justify-content-end">
@@ -877,20 +885,14 @@ function App() {
       </div>
       {/* Bot Message */}
       <div className="d-flex justify-content-start">
-        <div className={`chat-bubble bot-bubble${isLastMessage && isSending ? ' new-message' : ''}`}>
+        <div className="chat-bubble bot-bubble">
           <div className="bot-header">
             <strong>Bot</strong>
             <span className="model-indicator">
               {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
             </span>
           </div>
-          {isLastMessage && isSending ? (
-            <div className="new-message">
-              <TypingEffect text={chat.bot} />
-            </div>
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
-          )}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
           <i className="fas fa-volume-up speaker-icon" onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}></i>
           {chat.role === 'bot' && conversationId && (
             <Button
@@ -1092,8 +1094,6 @@ function App() {
                         key={chat.id || chat._id || chat.timestamp || index}
                         chat={chat}
                         index={index}
-                        isLastMessage={index === currentConversation.messages.length - 1}
-                        isSending={isSending}
                         availableModels={availableModels}
                         selectedModel={selectedModel}
                         setCurrentConversation={setCurrentConversation}
@@ -1103,8 +1103,14 @@ function App() {
                     ))}
                     {isSending && (
                       <div className="d-flex justify-content-start">
-                        <div className="chat-bubble bot-bubble">
-                          <LoadingDots />
+                        <div className="chat-bubble bot-bubble new-message">
+                          <div className="bot-header">
+                            <strong>Bot</strong>
+                            <span className="model-indicator">
+                              {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
+                            </span>
+                          </div>
+                          <TypingEffect text={message} />
                         </div>
                       </div>
                     )}
