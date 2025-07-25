@@ -270,13 +270,13 @@ body, .container.d-flex.flex-column.vh-100.flex-grow-1.overflow-auto {
   }
 }
 
+/* Remove the border-right and blink-caret from .typing-effect > * for no cursor */
 .typing-effect > * {
   overflow: hidden;
-  border-right: 0.15em solid orange;
   white-space: nowrap;
   margin: 0 auto;
   letter-spacing: 0.15em;
-  animation: typing 3.5s steps(40, end), blink-caret 0.75s step-end infinite;
+  /* No border-right, no animation: blink-caret */
 }
 @media (max-width: 768px) {
   .chat-window {
@@ -770,8 +770,11 @@ body, .container.d-flex.flex-column.vh-100.flex-grow-1.overflow-auto {
   0% { transform: scale(0.95); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
-.chat-bubble, .typing-effect {
+.chat-bubble.new-message {
   animation: popIn 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+.typing-effect {
+  /* Optionally, keep animation for typing effect only if desired */
 }
 
 /* 10. Mobile responsiveness improvements */

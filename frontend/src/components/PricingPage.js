@@ -117,39 +117,39 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
               </div>
               
               <div className="mt-auto pt-4">
-                <div className="action-buttons">
-                  <div className="mb-3">
-                    <label className="form-label">Choose model for ad reward:</label>
-                    <div className="model-selector-pricing">
-                      {adModels.map(model => (
-                        <div 
-                          key={model.id}
-                          className={`model-option-pricing ${selectedAdModel === model.id ? 'selected' : ''}`}
-                          onClick={() => setSelectedAdModel(model.id)}
-                        >
-                          <div className="model-info-pricing">
-                            <div className="model-name-pricing">{model.name}</div>
-                            <div className="model-reward-pricing">
-                              {model.reward.toLocaleString()} tokens (~{Math.floor(model.reward / model.cost)} messages)
+                  <div className="action-buttons">
+                    <div className="mb-3">
+                      <label className="form-label">Choose model for ad reward:</label>
+                      <div className="model-selector-pricing">
+                        {adModels.map(model => (
+                          <div 
+                            key={model.id}
+                            className={`model-option-pricing ${selectedAdModel === model.id ? 'selected' : ''}`}
+                            onClick={() => setSelectedAdModel(model.id)}
+                          >
+                            <div className="model-info-pricing">
+                              <div className="model-name-pricing">{model.name}</div>
+                              <div className="model-reward-pricing">
+                                {model.reward.toLocaleString()} tokens (~{Math.floor(model.reward / model.cost)} messages)
+                              </div>
                             </div>
+                            {selectedAdModel === model.id && <i className="fas fa-check"></i>}
                           </div>
-                          {selectedAdModel === model.id && <i className="fas fa-check"></i>}
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
+                    <Button 
+                      variant="success" 
+                      onClick={handleWatchAdClick}
+                      disabled={isWatchingAd}
+                      className="w-100 mb-2"
+                    >
+                      {isWatchingAd ? 'Watching Ad...' : `Watch Ad for ${adModels.find(m => m.id === selectedAdModel)?.reward.toLocaleString()} Tokens`}
+                  </Button>
+                    <small className="text-muted d-block">
+                      Watch ads to earn tokens for your chosen model
+                    </small>
                   </div>
-                  <Button 
-                    variant="success" 
-                    onClick={handleWatchAdClick}
-                    disabled={isWatchingAd}
-                    className="w-100 mb-2"
-                  >
-                    {isWatchingAd ? 'Watching Ad...' : `Watch Ad for ${adModels.find(m => m.id === selectedAdModel)?.reward.toLocaleString()} Tokens`}
-                </Button>
-                  <small className="text-muted d-block">
-                    Watch ads to earn tokens for your chosen model
-                  </small>
-                </div>
                 {isProActive && (
                   <div className="current-plan-indicator mt-3">
                     <Badge bg="success" className="w-100">Current Plan</Badge>

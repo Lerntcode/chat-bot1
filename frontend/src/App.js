@@ -10,27 +10,41 @@ import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Auth from './components/Auth';
 import PricingPage from './components/PricingPage'; // Import the new PricingPage
 import AdminPanel from './components/AdminPanel'; // Import the admin panel
-import { Route, Routes, Link, BrowserRouter as Router } from 'react-router-dom'; // Import routing components
+import { Route, Routes, Link, BrowserRouter as Router, useNavigate } from 'react-router-dom'; // Import routing components
 import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 // Remove: import Select from 'react-select';
+import ModeSelectionPage from './ModeSelectionPage';
 
 const TypingEffect = ({ text }) => {
+  const [displayedText, setDisplayedText] = useState('');
   const ref = useRef();
 
-  // Scroll to bottom when the component mounts
+  useEffect(() => {
+    const words = text.split(' ');
+    let i = 0;
+    setDisplayedText('');
+    const timer = setInterval(() => {
+      setDisplayedText(prev => prev + (i === 0 ? '' : ' ') + words[i]);
+      i++;
+      if (i >= words.length) {
+        clearInterval(timer);
+      }
+    }, 200); // 200ms per word
+    return () => clearInterval(timer);
+  }, [text]);
+
   useEffect(() => {
     if (ref.current) {
       ref.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, []);
+  }, [displayedText]);
 
+  // Use the same font and style as .chat-bubble.bot-bubble
   return (
-    <div className="typing-effect" ref={ref}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>
-        {text}
-      </ReactMarkdown>
-    </div>
+    <span className="chat-bubble bot-bubble typing-effect" ref={ref} style={{ display: 'inline-block', fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif', fontSize: '1.08rem', lineHeight: 1.6 }}>
+      {displayedText}
+    </span>
   );
 };
 
@@ -99,6 +113,61 @@ const NotificationBanner = ({ warnings, onClose }) => {
     </div>
   );
 };
+
+// Define ChatInput above App
+const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessage, selectedFile, setSelectedFile, supportedFormats, handlePlusClick, handleFileChange, handleToggleRecording, isRecording, fileInputRef }) => (
+  <div className="d-flex mt-3 align-items-center input-container">
+    <div className="input-left-icons">
+      <i className={`fas fa-plus ${isSending ? 'disabled' : ''}`} onClick={handlePlusClick}></i>
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        style={{ display: 'none' }} 
+        disabled={isSending}
+        accept={supportedFormats.map(format => `.${format}`).join(',')}
+      />
+      <div className="tools-label" title={`Supported formats: ${supportedFormats.join(', ')}`}> <i className="fas fa-wrench"></i> <span>Tools</span> </div>
+    </div>
+    {selectedFile && (
+      <div className="selected-file">
+        <div className="file-info">
+          <i className="fas fa-file"></i>
+          <span className="file-name">{selectedFile.name}</span>
+          <span className="file-size">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+        </div>
+        <button onClick={() => setSelectedFile(null)} disabled={isSending}>&times;</button>
+      </div>
+    )}
+    <input
+      type="text"
+      className="form-control border-0 flex-grow-1"
+      placeholder={isSending ? "Sending..." : "Ask anything"}
+      value={message}
+      onChange={e => setMessage(e.target.value)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSendMessage(message);
+        }
+      }}
+      disabled={isSending}
+      aria-label="Type your message here"
+    />
+    <div className="input-right-icons">
+      <i className={`fas fa-microphone ${isRecording ? 'recording' : ''} ${isSending ? 'disabled' : ''}`} onClick={handleToggleRecording}></i>
+      <i className="fas fa-waveform"></i>
+      <button 
+        className={`send-button ${message.trim() ? 'active' : ''}`}
+        onClick={() => handleSendMessage(message)}
+        aria-label="Send message"
+        disabled={isSending || !message.trim()}
+      >
+        <i className="fas fa-arrow-up"></i>
+      </button>
+    </div>
+  </div>
+));
 
 
 function App() {
@@ -847,26 +916,9 @@ function App() {
     },
   }), [theme]);
 
-  if (!isAuthenticated) {
-    return <Auth onAuthSuccess={handleAuthSuccess} />;
-  }
+  const navigate = useNavigate();
 
-  // Mode selection page component
-  const ModeSelectionPage = ({ currentMode, onSelect }) => (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(10,10,10,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff', transition: 'all 0.3s',
-    }}>
-      <h2 style={{ marginBottom: 32 }}>Choose Your Mode</h2>
-      <div style={{ display: 'flex', gap: 32 }}>
-        <button onClick={() => onSelect('coding')} style={{ padding: '2rem 3rem', fontSize: 24, borderRadius: 16, border: currentMode==='coding'?'2px solid #007bff':'2px solid #444', background: currentMode==='coding'?'#007bff':'#222', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Coding</button>
-        <button onClick={() => onSelect('conversation')} style={{ padding: '2rem 3rem', fontSize: 24, borderRadius: 16, border: currentMode==='conversation'?'2px solid #28a745':'2px solid #444', background: currentMode==='conversation'?'#28a745':'#222', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Conversation</button>
-        <button onClick={() => onSelect('searching')} style={{ padding: '2rem 3rem', fontSize: 24, borderRadius: 16, border: currentMode==='searching'?'2px solid #ffc107':'2px solid #444', background: currentMode==='searching'?'#ffc107':'#222', color: currentMode==='searching'?'#222':'#fff', cursor: 'pointer', fontWeight: 600 }}>Searching</button>
-      </div>
-      <button onClick={() => onSelect(currentMode)} style={{ marginTop: 48, fontSize: 18, background: 'none', color: '#fff', border: 'none', textDecoration: 'underline', cursor: 'pointer' }}>Cancel</button>
-    </div>
-  );
-
-  // Memoized ChatMessage component
+  // Define ChatMessage first
   const ChatMessage = React.memo(({ chat, index, isLastMessage, isSending, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
     <React.Fragment key={index}>
       {/* User Message */}
@@ -932,10 +984,27 @@ function App() {
     </React.Fragment>
   ));
 
+  // Now use useMemo for memoizedMessages
+  const memoizedMessages = useMemo(() => (
+    currentConversation.messages.map((chat, index) => (
+      <ChatMessage
+        key={chat.id || chat._id || chat.timestamp || index}
+        chat={chat}
+        index={index}
+        availableModels={availableModels}
+        selectedModel={selectedModel}
+        setCurrentConversation={setCurrentConversation}
+        conversationId={currentConversation.id}
+        handleSummarizeConversation={handleSummarizeConversation}
+        isLastMessage={index === currentConversation.messages.length - 1}
+        isSending={isSending}
+      />
+    ))
+  ), [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, handleSummarizeConversation, isSending]);
+
   // Remove all react-select customOption and modelOptions code.
 
   return (
-    <Router>
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         <div className="d-flex">
@@ -1028,223 +1097,167 @@ function App() {
           </div>
 
           <div className="container d-flex flex-column vh-100 flex-grow-1 overflow-auto">
-            <div className="header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 24px', background: '#353744', minHeight: 56 }}>
-              <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <Button className="modern-button" style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }} onClick={() => setShowSidebar(!showSidebar)}>
+          <div className="header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 24px', background: '#353744', minHeight: 56 }}>
+            <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <Button className="modern-button" style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }} onClick={() => setShowSidebar(!showSidebar)}>
                   Chats
                 </Button>
                 {userStatus && (
-                  <div className="quick-token-display" style={{ display: 'flex', alignItems: 'center', background: '#23272f', borderRadius: 8, padding: '6px 16px', fontSize: 15, height: 40, marginLeft: 4 }}>
-                    <span className="quick-token-icon" style={{ fontSize: 18, marginRight: 6 }}>🪙</span>
-                    <span className="quick-token-number" style={{ fontWeight: 600, marginRight: 6 }}>{getCurrentModelTokenBalance().toLocaleString()}</span>
-                    <span className="quick-model-info" style={{ color: '#aaa', fontSize: 14 }}>
-                      {availableModels.find(m => m.id === selectedModel)?.name || 'Unknown'} (~{getCurrentModelMessagesPossible()} msgs)
-                    </span>
+                <div className="quick-token-display" style={{ display: 'flex', alignItems: 'center', background: '#23272f', borderRadius: 8, padding: '6px 16px', fontSize: 15, height: 40, marginLeft: 4 }}>
+                  <span className="quick-token-icon" style={{ fontSize: 18, marginRight: 6 }}>🪙</span>
+                  <span className="quick-token-number" style={{ fontWeight: 600, marginRight: 6 }}>{getCurrentModelTokenBalance().toLocaleString()}</span>
+                  <span className="quick-model-info" style={{ color: '#aaa', fontSize: 14 }}>
+                    {availableModels.find(m => m.id === selectedModel)?.name || 'Unknown'} (~{getCurrentModelMessagesPossible()} msgs)
+                      </span>
                   </div>
                 )}
-                <select
-                  value={selectedModel}
-                  onChange={e => setSelectedModel(e.target.value)}
-                  style={{ marginLeft: 12, padding: '6px 12px', borderRadius: 8, fontSize: 15, height: 40, background: '#23272f', color: '#fff', border: '1px solid #444', outline: 'none', minWidth: 140 }}
-                  aria-label="Select AI Model"
-                >
-                  {availableModels.map(model => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <button onClick={() => setShowModePage(true)} style={{ padding: '6px 18px', borderRadius: 8, background: '#333', color: '#fff', border: 'none', fontWeight: 600, fontSize: 16, height: 40, cursor: 'pointer' }}>
-                  Mode
-                </button>
-                <Link to="/pricing" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-                  <Button variant="outline-light" className="modern-button" style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }}>Pricing & Upgrade</Button>
-                </Link>
-                <Button 
-                  variant="outline-light" 
-                  className="modern-button" 
-                  style={{ fontSize: 16, height: 40, borderRadius: 8 }}
-                  onClick={() => setShowAdminPanel(true)}
-                >
-                  Admin Panel
-                </Button>
-                <button className="theme-toggle-button" onClick={toggleTheme} style={{ height: 40, width: 40, borderRadius: 8, background: '#23272f', color: '#fff', border: 'none', marginLeft: 8 }}>
-                  {theme === 'dark' ? <i className="fas fa-sun"></i> : <i className="fas fa-moon"></i>}
-                </button>
-              </div>
+              <select
+                value={selectedModel}
+                onChange={e => setSelectedModel(e.target.value)}
+                style={{ marginLeft: 12, padding: '6px 12px', borderRadius: 8, fontSize: 15, height: 40, background: '#23272f', color: '#fff', border: '1px solid #444', outline: 'none', minWidth: 140 }}
+                aria-label="Select AI Model"
+              >
+                      {availableModels.map(model => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+                    </div>
+            <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button onClick={() => navigate('/mode')} style={{ padding: '6px 18px', borderRadius: 8, background: '#333', color: '#fff', border: 'none', fontWeight: 600, fontSize: 16, height: 40, cursor: 'pointer' }}>
+                Mode
+              </button>
+              <Link to="/pricing" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                <Button variant="outline-light" className="modern-button" style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }}>Pricing & Upgrade</Button>
+              </Link>
+              <Button 
+                variant="outline-light" 
+                className="modern-button" 
+                style={{ fontSize: 16, height: 40, borderRadius: 8 }}
+                onClick={() => setShowAdminPanel(true)}
+              >
+                Admin Panel
+              </Button>
+              <button className="theme-toggle-button" onClick={toggleTheme} style={{ height: 40, width: 40, borderRadius: 8, background: '#23272f', color: '#fff', border: 'none', marginLeft: 8 }}>
+                {theme === 'dark' ? <i className="fas fa-sun"></i> : <i className="fas fa-moon"></i>}
+              </button>
             </div>
-            <Routes>
-              <Route path="/pricing" element={<PricingPage userStatus={userStatus} modelTokenBalances={modelTokenBalances} handleWatchAd={handleWatchAd} handlePurchaseTier={handlePurchaseTier} />} />
-              <Route path="/" element={
-                <>
-                  <div className="flex-grow-1 rounded shadow-sm chat-window">
-                    {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
-                    {userStatus && showNotification && (userStatus.lowTokenWarning || userStatus.paidExpiryWarning) && (
-                      <NotificationBanner
-                        warnings={userStatus}
-                        onClose={() => setShowNotification(false)}
-                      />
-                    )}
-                    {currentConversation.messages.map((chat, index) => (
-                      <ChatMessage
-                        key={chat.id || chat._id || chat.timestamp || index}
-                        chat={chat}
-                        index={index}
-                        isLastMessage={index === currentConversation.messages.length - 1}
-                        isSending={isSending}
-                        availableModels={availableModels}
-                        selectedModel={selectedModel}
-                        setCurrentConversation={setCurrentConversation}
-                        conversationId={currentConversation.id}
-                        handleSummarizeConversation={handleSummarizeConversation}
-                      />
-                    ))}
-                    {isSending && (
-                      <div className="d-flex justify-content-start">
-                        <div className="chat-bubble bot-bubble">
-                          <LoadingDots />
-                        </div>
-                      </div>
-                    )}
-                    {/* Always scroll to bottom */}
-                    <div ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }} />
-                  </div>
-                  <div className="banner-ad-placeholder">
-                    <p>Banner Ad Placeholder</p>
-                  </div>
-                  <div 
-                    className="d-flex mt-3 align-items-center input-container"
-                  >
-                    <div className="input-left-icons">
-                      <i className={`fas fa-plus ${isSending ? 'disabled' : ''}`} onClick={handlePlusClick}></i>
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleFileChange} 
-                        style={{ display: 'none' }} 
-                        disabled={isSending}
-                        accept={supportedFormats.map(format => `.${format}`).join(',')}
-                      />
-                      <div className="tools-label" title={`Supported formats: ${supportedFormats.join(', ')}`}>
-                        <i className="fas fa-wrench"></i>
-                        <span>Tools</span>
-                      </div>
-                    </div>
-                    {selectedFile && (
-                      <div className="selected-file">
-                        <div className="file-info">
-                          <i className="fas fa-file"></i>
-                          <span className="file-name">{selectedFile.name}</span>
-                          <span className="file-size">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
-                        </div>
-                        <button onClick={() => setSelectedFile(null)} disabled={isSending}>&times;</button>
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      className="form-control border-0 flex-grow-1"
-                      placeholder={isSending ? "Sending..." : "Ask anything"}
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault(); // Prevent new line on enter
-                          handleSendMessage(message);
-                        }
-                      }}
-                      disabled={isSending}
-                      aria-label="Type your message here"
-                    />
-                    <div className="input-right-icons">
-                      <i className={`fas fa-microphone ${isRecording ? 'recording' : ''} ${isSending ? 'disabled' : ''}`} onClick={handleToggleRecording}></i>
-                      <i className="fas fa-waveform"></i>
-                      <button 
-                        className={`send-button ${message.trim() ? 'active' : ''}`}
-                        onClick={() => handleSendMessage(message)}
-                        aria-label="Send message"
-                        disabled={isSending || !message.trim()}
-                      >
-                        <i className="fas fa-arrow-up"></i>
-                      </button>
-                    </div>
-                  </div>
-                </>
-              } />
-            </Routes>
           </div>
-
-          <Modal show={showMemoryModal} onHide={() => setShowMemoryModal(false)} centered className="memory-modal">
-            <Modal.Header closeButton>
-              <Modal.Title>Chatbot Memory</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <input
-                type="text"
-                className="form-control mb-3"
-                placeholder="Search memory..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {memory.length > 0 ? (
-                <ul className="list-group">
-                  {memory.filter(mem => mem.text.toLowerCase().includes(searchTerm.toLowerCase())).map(mem => (
-                    <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center">
-                      {editingMemory?.id === mem.id ? (
-                        <input 
-                          type="text" 
-                          defaultValue={mem.text}
-                          onBlur={(e) => handleUpdateMemory(mem.id, e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateMemory(mem.id, e.target.value); }}
-                          autoFocus
-                        />
-                      ) : (
-                        <span>{mem.text}</span>
-                      )}
-                      <div>
-                        <Button variant="outline-light" size="sm" onClick={() => setEditingMemory(mem)} className="me-2">Edit</Button>
-                        <Button variant="outline-danger" size="sm" onClick={() => handleDeleteMemory(mem.id)}>Delete</Button>
+          <Routes>
+            <Route path="/mode" element={<ModeSelectionPage onSelect={(selectedMode) => { setMode(selectedMode); navigate('/'); }} />} />
+            <Route path="/pricing" element={<PricingPage userStatus={userStatus} modelTokenBalances={modelTokenBalances} handleWatchAd={handleWatchAd} handlePurchaseTier={handlePurchaseTier} />} />
+            <Route path="/" element={
+              <>
+                <div className="flex-grow-1 rounded shadow-sm chat-window">
+                  {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
+                  {userStatus && showNotification && (userStatus.lowTokenWarning || userStatus.paidExpiryWarning) && (
+                    <NotificationBanner
+                      warnings={userStatus}
+                      onClose={() => setShowNotification(false)}
+                    />
+                  )}
+                  {memoizedMessages}
+                  {isSending && (
+                    <div className="d-flex justify-content-start">
+                      <div className="chat-bubble bot-bubble new-message">
+                        <TypingEffect text="..." />
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>The chatbot hasn't remembered anything yet.</p>
-              )}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="secondary" onClick={() => setShowMemoryModal(false)}>
-                Close
-              </Button>
-            </Modal.Footer>
-          </Modal>
-          
-          {/* Admin Panel */}
-          <AdminPanel 
-            isVisible={showAdminPanel} 
-            onClose={() => setShowAdminPanel(false)} 
-          />
-
-          <UsageDashboard show={showUsageDashboard} onClose={() => setShowUsageDashboard(false)} />
-
-          <Modal show={showSummaryModal} onHide={() => setShowSummaryModal(false)} centered className="summary-modal">
-            <Modal.Header closeButton>
-              <Modal.Title>Conversation Summary</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <p>{summaryContent}</p>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="secondary" onClick={() => setShowSummaryModal(false)}>
-                Close
-              </Button>
-            </Modal.Footer>
-          </Modal>
-          {showModePage && <ModeSelectionPage currentMode={mode} onSelect={(selected) => { setMode(selected); setShowModePage(false); }} />}
+                    </div>
+                  )}
+                  {/* Always scroll to bottom */}
+                  <div ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }} />
+                </div>
+                <div className="banner-ad-placeholder">
+                  <p>Banner Ad Placeholder</p>
+                </div>
+                <ChatInput
+                  message={message}
+                  setMessage={setMessage}
+                  isSending={isSending}
+                  handleSendMessage={handleSendMessage}
+                  selectedFile={selectedFile}
+                  setSelectedFile={setSelectedFile}
+                  supportedFormats={supportedFormats}
+                  handlePlusClick={handlePlusClick}
+                  handleFileChange={handleFileChange}
+                  handleToggleRecording={handleToggleRecording}
+                  isRecording={isRecording}
+                  fileInputRef={fileInputRef}
+                />
+              </>
+            } />
+          </Routes>
         </div>
+
+        <Modal show={showMemoryModal} onHide={() => setShowMemoryModal(false)} centered className="memory-modal">
+          <Modal.Header closeButton>
+            <Modal.Title>Chatbot Memory</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <input
+              type="text"
+              className="form-control mb-3"
+              placeholder="Search memory..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {memory.length > 0 ? (
+              <ul className="list-group">
+                {memory.filter(mem => mem.text.toLowerCase().includes(searchTerm.toLowerCase())).map(mem => (
+                  <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center">
+                    {editingMemory?.id === mem.id ? (
+                      <input 
+                        type="text" 
+                        defaultValue={mem.text}
+                        onBlur={(e) => handleUpdateMemory(mem.id, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateMemory(mem.id, e.target.value); }}
+                        autoFocus
+                      />
+                    ) : (
+                      <span>{mem.text}</span>
+                    )}
+                    <div>
+                      <Button variant="outline-light" size="sm" onClick={() => setEditingMemory(mem)} className="me-2">Edit</Button>
+                      <Button variant="outline-danger" size="sm" onClick={() => handleDeleteMemory(mem.id)}>Delete</Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>The chatbot hasn't remembered anything yet.</p>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowMemoryModal(false)}>
+              Close
+            </Button>
+          </Modal.Footer>
+        </Modal>
+        
+        {/* Admin Panel */}
+        <AdminPanel 
+          isVisible={showAdminPanel} 
+          onClose={() => setShowAdminPanel(false)} 
+        />
+
+        <UsageDashboard show={showUsageDashboard} onClose={() => setShowUsageDashboard(false)} />
+
+        <Modal show={showSummaryModal} onHide={() => setShowSummaryModal(false)} centered className="summary-modal">
+          <Modal.Header closeButton>
+            <Modal.Title>Conversation Summary</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <p>{summaryContent}</p>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowSummaryModal(false)}>
+              Close
+            </Button>
+          </Modal.Footer>
+        </Modal>
+      </div>
       </ThemeProvider>
-    </Router>
   );
 }
 
