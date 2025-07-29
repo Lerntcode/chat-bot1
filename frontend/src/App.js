@@ -16,34 +16,73 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 // Remove: import Select from 'react-select';
 import ModeSelectionPage from './ModeSelectionPage';
 
-const TypingEffect = ({ text }) => {
+const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   const [displayedText, setDisplayedText] = useState('');
+  const [currentIndex, setCurrentIndex] = useState(0);
   const ref = useRef();
 
   useEffect(() => {
-    const words = text.split(' ');
-    let i = 0;
+    if (!isTyping || !text) {
+      setDisplayedText(text || '');
+      setCurrentIndex(0);
+      return;
+    }
+
     setDisplayedText('');
+    setCurrentIndex(0);
+    
+    const words = text.split(' ');
+    let wordIndex = 0;
+    
     const timer = setInterval(() => {
-      setDisplayedText(prev => prev + (i === 0 ? '' : ' ') + words[i]);
-      i++;
-      if (i >= words.length) {
+      if (wordIndex < words.length) {
+        setDisplayedText(prev => prev + (wordIndex === 0 ? '' : ' ') + words[wordIndex]);
+        wordIndex++;
+        setCurrentIndex(wordIndex);
+      } else {
         clearInterval(timer);
       }
-    }, 200); // 200ms per word
-    return () => clearInterval(timer);
-  }, [text]);
+    }, 150); // 150ms per word for more realistic typing
 
+    return () => clearInterval(timer);
+  }, [text, isTyping]);
+
+  // Only scroll on initial render, not during typing
   useEffect(() => {
-    if (ref.current) {
+    if (ref.current && !isTyping) {
       ref.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [displayedText]);
+  }, []);
 
-  // Use the same font and style as .chat-bubble.bot-bubble
+  // If showing dots (bot thinking), show dots animation
+  if (showDots) {
+    return (
+      <span className="chat-bubble bot-bubble typing-effect" ref={ref} style={{ 
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif', 
+        fontSize: '1.08rem', 
+        lineHeight: 1.6,
+        padding: '8px 12px',
+        minWidth: '40px'
+      }}>
+        <span>•</span><span>•</span><span>•</span>
+      </span>
+    );
+  }
+
+  // Show typing text
   return (
-    <span className="chat-bubble bot-bubble typing-effect" ref={ref} style={{ display: 'inline-block', fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif', fontSize: '1.08rem', lineHeight: 1.6 }}>
+    <span className="chat-bubble bot-bubble" ref={ref} style={{ 
+      display: 'inline-block', 
+      fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif', 
+      fontSize: '1.08rem', 
+      lineHeight: 1.6,
+      padding: '8px 12px'
+    }}>
       {displayedText}
+      {currentIndex < text.split(' ').length && <span className="typing-cursor">|</span>}
     </span>
   );
 };
@@ -166,10 +205,10 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
   const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
     <React.Fragment key={chat.id || chat._id || chat.timestamp || index}>
       {/* User Message */}
-      {chat.user && (
+      {(chat.user || chat.isUserMessage) && (
         <div className="d-flex justify-content-end">
-          <div className="chat-bubble user-bubble">
-            <strong>You:</strong> {chat.user}
+          <div className="chat-bubble user-bubble new-message">
+            <strong>You:</strong> {chat.user || chat.message}
           </div>
         </div>
       )}
@@ -183,10 +222,10 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
                 {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
               </span>
             </div>
-            {chat.isTyping ? (
-              <div className="new-message">
-                <TypingEffect text="..." />
-              </div>
+            {chat.isTyping && chat.showDots ? (
+              <TypingEffect text="" isTyping={false} showDots={true} />
+            ) : chat.isTyping && chat.typingText ? (
+              <TypingEffect text={chat.typingText} isTyping={true} showDots={false} />
             ) : (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
             )}
@@ -268,6 +307,10 @@ function App() {
     typography: { fontFamily: 'Inter, Arial, sans-serif' },
     shape: { borderRadius: 12 },
   }), [theme]);
+
+  // === Simulated ad rewards state (must be at top level, not conditional) ===
+  // Remove simulatedAdRewardsRef and mergeSimulatedRewards
+
   useEffect(() => {
     document.body.className = theme + '-theme';
     localStorage.setItem('theme', theme);
@@ -300,27 +343,27 @@ function App() {
     const fetchConversations = async () => {
       try {
         const response = await axios.get('http://localhost:5000/api/v1/conversations', {
-          headers: { 'x-auth-token': localStorage.getItem('token') }
-        });
+        headers: { 'x-auth-token': localStorage.getItem('token') }
+      });
         setConversations(response.data);
-      } catch (error) {
-        if (error.response && error.response.status === 401) {
-          setIsAuthenticated(false);
-          localStorage.removeItem('token');
+    } catch (error) {
+      if (error.response && error.response.status === 401) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('token');
           setError(null);
           return;
-        } else if (error.response && error.response.status === 429) {
-          alert('You are being rate limited. Please wait and try again.');
-        } else {
+      } else if (error.response && error.response.status === 429) {
+        alert('You are being rate limited. Please wait and try again.');
+      } else {
           alert('Error fetching conversations.');
-        }
       }
-    };
+    }
+  };
     fetchConversations();
   }, [isAuthenticated]);
   useEffect(() => {
     if (!isAuthenticated) return;
-    fetchUserStatus();
+      fetchUserStatus();
   }, [isAuthenticated]);
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -408,7 +451,7 @@ function App() {
 
   function fetchUserStatus() {
     axios.get('http://localhost:5000/api/v1/user-status', {
-      headers: { 'x-auth-token': localStorage.getItem('token') }
+          headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(response => {
         setUserStatus(response.data);
@@ -432,7 +475,7 @@ function App() {
   function handleConversationClick(conversationId) {
     console.log('handleConversationClick called with:', conversationId);
     axios.get(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
-      headers: { 'x-auth-token': localStorage.getItem('token') }
+        headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(response => {
         console.log('API response for conversation:', response.data);
@@ -440,50 +483,50 @@ function App() {
         console.log('messages array:', response.data.messages);
         const messages = response.data.Messages || response.data.messages || [];
         console.log('Final messages to set:', messages);
-        setCurrentConversation(prev => ({
-          ...prev,
-          id: response.data.id,
+      setCurrentConversation(prev => ({
+        ...prev,
+        id: response.data.id,
           messages: messages,
-          title: response.data.title,
-          lastMessageTimestamp: response.data.lastMessageTimestamp,
-        }));
+        title: response.data.title,
+        lastMessageTimestamp: response.data.lastMessageTimestamp,
+      }));
       })
       .catch(error => {
         console.error('Error in handleConversationClick:', error);
-        if (error.response && error.response.status === 401) {
-          setIsAuthenticated(false);
-          localStorage.removeItem('token');
+      if (error.response && error.response.status === 401) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('token');
           setError(null);
           return;
-        } else if (error.response && error.response.status === 429) {
-          alert('You are being rate limited. Please wait and try again.');
-        } else {
-          alert('Error fetching conversation.');
-        }
+      } else if (error.response && error.response.status === 429) {
+        alert('You are being rate limited. Please wait and try again.');
+      } else {
+        alert('Error fetching conversation.');
+      }
       });
-  }
+    }
 
   function handleDeleteConversation(conversationId) {
     axios.delete(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
-      headers: { 'x-auth-token': localStorage.getItem('token') }
+        headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(() => {
-        setConversations(conversations.filter(conv => conv.id !== conversationId));
-        if (currentConversation.id === conversationId) {
-          setCurrentConversation({ id: null, messages: [] });
-        }
+      setConversations(conversations.filter(conv => conv.id !== conversationId));
+      if (currentConversation.id === conversationId) {
+        setCurrentConversation({ id: null, messages: [] });
+      }
       })
       .catch(error => {
-        if (error.response && error.response.status === 401) {
-          setIsAuthenticated(false);
-          localStorage.removeItem('token');
+      if (error.response && error.response.status === 401) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('token');
           setError(null);
           return;
-        } else if (error.response && error.response.status === 429) {
-          alert('You are being rate limited. Please wait and try again.');
-        } else {
-          alert('Error deleting conversation.');
-        }
+      } else if (error.response && error.response.status === 429) {
+        alert('You are being rate limited. Please wait and try again.');
+      } else {
+        alert('Error deleting conversation.');
+      }
       });
   }
 
@@ -492,7 +535,18 @@ function App() {
   }
 
   async function handleWatchAd(preferredModel = selectedModel) {
-    // ...existing code for handleWatchAd...
+    // Simulate ad watching with a 2-second delay
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Call backend to grant tokens
+    try {
+      await axios.post('http://localhost:5000/api/v1/ad-view', { preferredModel }, {
+        headers: { 'x-auth-token': localStorage.getItem('token') }
+      });
+      // Refresh user status to get updated token balances
+      fetchUserStatus();
+    } catch (error) {
+      throw new Error('Failed to watch ad. Please try again.');
+    }
   }
 
   async function handlePurchaseTier() {
@@ -594,7 +648,41 @@ function App() {
 
   const handleSendMessage = async (userQuery) => {
     if ((!message && !selectedFile) || isSending) return;
+    
+    // Immediately add user message to conversation
+    const userMessage = {
+      id: Date.now(), // temporary ID
+      user: userQuery,
+      timestamp: new Date().toISOString(),
+      isUserMessage: true
+    };
+    
+    if (!currentConversation.id) {
+      setCurrentConversation({ id: null, messages: [userMessage] });
+    } else {
+      setCurrentConversation(prev => ({ 
+        ...prev, 
+        messages: [...(prev.messages || []), userMessage] 
+      }));
+    }
+
     setIsSending(true);
+    
+    // Add a typing message for the bot (dots animation)
+    const typingMessage = {
+      id: Date.now() + 1, // temporary ID
+      bot: '', // Will be filled with actual response
+      timestamp: new Date().toISOString(),
+      isTyping: true,
+      typingText: '', // Empty for dots animation
+      showDots: true // Flag to show dots instead of typing text
+    };
+    
+    setCurrentConversation(prev => ({ 
+      ...prev, 
+      messages: [...(prev.messages || []), typingMessage] 
+    }));
+    
     const formData = new FormData();
     formData.append('message', message);
     if (selectedFile) {
@@ -617,12 +705,26 @@ function App() {
       });
       console.log('New message response:', response.data);
       const { conversationId, message: newMessage } = response.data;
+
+      // The `newMessage` from the server contains both user and bot parts,
+      // so we destructure it to exclude the `user` part from the bot's message bubble.
+      const { user, ...botMessage } = newMessage;
+      const finalBotMessage = { ...botMessage, isTyping: true, typingText: newMessage.bot, showDots: false };
+
+      // This logic is the same for both new and existing conversations.
+      setCurrentConversation(prev => ({
+        id: conversationId, // Set or update the conversation ID
+        messages: prev.messages.map(msg =>
+          msg.id === typingMessage.id ? finalBotMessage : msg
+        )
+      }));
+
+      // If it's a new conversation, add it to the sidebar list.
       if (!currentConversation.id) {
-        setCurrentConversation({ id: conversationId, messages: [newMessage] });
         const newConversation = { id: conversationId, title: newMessage.user?.substring(0, 30) + '...' || 'New Chat', lastMessageTimestamp: newMessage.timestamp };
         setConversations(prevConversations => [...prevConversations, newConversation]);
       } else {
-        setCurrentConversation(prev => ({ ...prev, messages: [...(prev.messages || []), newMessage] }));
+        // If it's an existing conversation, update its timestamp and title in the sidebar.
         setConversations(prevConversations =>
           prevConversations.map(conv =>
             conv.id === conversationId
@@ -635,6 +737,12 @@ function App() {
       setSelectedFile(null);
       fetchUserStatus(); // Refresh user status after sending message
     } catch (error) {
+      // Remove the temporary messages on error
+      setCurrentConversation(prev => ({ 
+        ...prev, 
+        messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== typingMessage.id)
+      }));
+      
       if (error.response && error.response.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('token');
@@ -666,7 +774,7 @@ function App() {
     if (isRecording) {
       recognition.stop();
       setIsRecording(false);
-    } else {
+      } else {
       recognition.start();
       setIsRecording(true);
     }
@@ -718,7 +826,8 @@ function App() {
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         <div className="d-flex">
-          <div className={`sidebar vh-100 border-end ${showSidebar ? '' : 'hidden'}`} aria-label="Chat history sidebar">
+          <div className="sidebar">
+            <div className="chat-list-scroll">
             <h3 className="text-center my-3">Previous Chats</h3>
             <button className="modern-button w-100 mb-3" onClick={() => setShowUsageDashboard(true)}>
               <i className="fas fa-chart-bar me-2"></i>Usage Dashboard
@@ -762,16 +871,10 @@ function App() {
                 </li>
               ))}
             </ul>
-            <div className="mt-auto p-2 d-grid gap-2">
-                <Button variant="outline-light" onClick={handleShowMemory} className="modern-button">Show Memory</Button>
-                <Button 
-                  variant="outline-light" 
-                  onClick={() => exportConversation(currentConversation)} 
-                  className="modern-button"
-                  disabled={!currentConversation.id || currentConversation.messages.length === 0}
-                >
-                  Export Chat
-                </Button>
+            </div>
+            <div className="token-logout-container">
+              {/* Token card */}
+              <div className="token-card">
                 {userStatus && (
                   <div className="user-status-info text-center mt-2">
                   <div className="token-counter">
@@ -802,7 +905,9 @@ function App() {
                   </div>
                   </div>
                 )}
-                <Button variant="outline-light" onClick={handleLogout} className="modern-button">Logout</Button>
+              </div>
+              {/* Logout button */}
+              <Button className="logout-btn" variant="outline-light" onClick={handleLogout} style={{ width: '100%', margin: 0 }}>Logout</Button>
             </div>
           </div>
 
@@ -870,13 +975,6 @@ function App() {
                   {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
                     <div className="no-messages-placeholder" style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}>
                       No messages yet. Start the conversation!
-                    </div>
-                  )}
-                  {isSending && (
-                    <div className="d-flex justify-content-start">
-                      <div className="chat-bubble bot-bubble new-message">
-                        <TypingEffect text="..." />
-                      </div>
                     </div>
                   )}
                   {/* Always scroll to bottom */}
