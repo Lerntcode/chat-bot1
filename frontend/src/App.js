@@ -42,7 +42,7 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
       } else {
         clearInterval(timer);
       }
-    }, 150); // 150ms per word for more realistic typing
+    }, 50); // 10ms per word for faster typing
 
     return () => clearInterval(timer);
   }, [text, isTyping]);
@@ -222,10 +222,8 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
                 {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
               </span>
             </div>
-            {chat.isTyping && chat.showDots ? (
-              <TypingEffect text="" isTyping={false} showDots={true} />
-            ) : chat.isTyping && chat.typingText ? (
-              <TypingEffect text={chat.typingText} isTyping={true} showDots={false} />
+            {chat.isTyping ? (
+              <TypingEffect text="" isTyping={true} showDots={true} />
             ) : (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
             )}
@@ -656,6 +654,8 @@ function App() {
       timestamp: new Date().toISOString(),
       isUserMessage: true
     };
+
+    setMessage('');
     
     if (!currentConversation.id) {
       setCurrentConversation({ id: null, messages: [userMessage] });
@@ -691,6 +691,7 @@ function App() {
     if (currentConversation.id) {
       formData.append('conversationId', currentConversation.id);
     }
+    formData.append('mode', mode);
     const systemPrompt = MODE_PROMPTS[mode] || "";
     const finalPrompt = `${systemPrompt} ${userQuery}`;
     try {
@@ -709,7 +710,7 @@ function App() {
       // The `newMessage` from the server contains both user and bot parts,
       // so we destructure it to exclude the `user` part from the bot's message bubble.
       const { user, ...botMessage } = newMessage;
-      const finalBotMessage = { ...botMessage, isTyping: true, typingText: newMessage.bot, showDots: false };
+      const finalBotMessage = { ...botMessage, isTyping: false };
 
       // This logic is the same for both new and existing conversations.
       setCurrentConversation(prev => ({

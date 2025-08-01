@@ -284,7 +284,9 @@ const auth = require('./middleware/auth');
  *                 error:
  *                   type: string
  */
-app.post('/api/v1/chat', chatLimiter, auth, upload.single('file'), async (req, res, next) => {
+const technicalQuestionDetector = require('./middleware/technicalQuestionDetector');
+
+app.post('/api/v1/chat', chatLimiter, auth, upload.single('file'), technicalQuestionDetector, async (req, res, next) => {
   try {
     const { message, conversationId } = req.body;
     logger.info({ action: 'chat_request', userId: req.user.id, conversationId, message, model: req.query.model || 'default' });
