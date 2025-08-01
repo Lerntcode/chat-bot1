@@ -202,6 +202,7 @@ app.get('/api/v1/health', (req, res) => {
 app.use('/api/v1/auth', require('./routes/auth'));
 app.use('/api/v1/monitoring', require('./routes/monitoring'));
 app.use('/api/v1/admin', require('./routes/admin'));
+app.use('/api/v1/code', require('./routes/codeExecution'));
 
 
 

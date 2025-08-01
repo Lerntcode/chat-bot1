@@ -15,6 +15,7 @@ import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 // Remove: import Select from 'react-select';
 import ModeSelectionPage from './ModeSelectionPage';
+import CodingMode from './components/CodingMode';
 
 const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   const [displayedText, setDisplayedText] = useState('');
@@ -965,22 +966,26 @@ function App() {
             <Route path="/pricing" element={<PricingPage userStatus={userStatus} modelTokenBalances={modelTokenBalances} handleWatchAd={handleWatchAd} handlePurchaseTier={handlePurchaseTier} />} />
             <Route path="/" element={
               <>
-                <div className="flex-grow-1 rounded shadow-sm chat-window">
-                  {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
-                  {userStatus && showNotification && (userStatus.lowTokenWarning || userStatus.paidExpiryWarning) && (
-                    <NotificationBanner
-                      warnings={userStatus}
-                      onClose={() => setShowNotification(false)}
-                    />
-                  )}
-                  {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
-                    <div className="no-messages-placeholder" style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}>
-                      No messages yet. Start the conversation!
-                    </div>
-                  )}
-                  {/* Always scroll to bottom */}
-                  <div ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }} />
-                </div>
+                {mode === 'coding' ? (
+                  <CodingMode onSendMessage={handleSendMessage} chatMessages={currentConversation.messages} />
+                ) : (
+                  <div className="flex-grow-1 rounded shadow-sm chat-window">
+                    {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
+                    {userStatus && showNotification && (userStatus.lowTokenWarning || userStatus.paidExpiryWarning) && (
+                      <NotificationBanner
+                        warnings={userStatus}
+                        onClose={() => setShowNotification(false)}
+                      />
+                    )}
+                    {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
+                      <div className="no-messages-placeholder" style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}>
+                        No messages yet. Start the conversation!
+                      </div>
+                    )}
+                    {/* Always scroll to bottom */}
+                    <div ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }} />
+                  </div>
+                )}
                 <div className="banner-ad-placeholder">
                   <p>Banner Ad Placeholder</p>
                 </div>
