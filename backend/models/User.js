@@ -27,6 +27,14 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('free', 'pro', 'enterprise'),
     defaultValue: 'free',
   },
+  oauthProvider: {
+    type: DataTypes.ENUM('google', 'github'),
+    allowNull: true,
+  },
+  oauthProviderId: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
   isPaidUser: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
@@ -46,6 +54,27 @@ const User = sequelize.define('User', {
   emailVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
+  },
+  failedLoginAttempts: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+  },
+  lockoutUntil: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  // 2FA fields
+  twoFactorEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  twoFactorSecret: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
+  twoFactorBackupCodes: {
+    type: DataTypes.JSON,
+    allowNull: true,
   },
   metadata: {
     type: DataTypes.JSON,

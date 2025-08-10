@@ -17,6 +17,15 @@ const Conversation = sequelize.define('Conversation', {
     type: DataTypes.DATE,
     allowNull: true,
   },
+}, {
+  indexes: [
+    {
+      fields: ['userId']
+    },
+    {
+      fields: ['lastMessageTimestamp']
+    }
+  ]
 });
 
 module.exports = Conversation;

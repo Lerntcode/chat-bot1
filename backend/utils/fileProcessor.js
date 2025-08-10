@@ -3,6 +3,7 @@ const path = require('path');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
+const xss = require('xss');
 
 class FileProcessor {
   constructor() {
@@ -30,12 +31,15 @@ class FileProcessor {
 
       const result = await processor(filePath);
       
+      // Sanitize the content to prevent XSS
+      const sanitizedContent = xss(result);
+      
       return {
         success: true,
-        content: result,
+        content: sanitizedContent,
         fileType: ext,
         fileName: originalName,
-        wordCount: this.countWords(result)
+        wordCount: this.countWords(sanitizedContent)
       };
     } catch (error) {
       return {
@@ -74,9 +78,9 @@ class FileProcessor {
 
   getFileSummary(content, maxLength = 500) {
     if (content.length <= maxLength) {
-      return content;
+      return xss(content);
     }
-    return content.substring(0, maxLength) + '...';
+    return xss(content.substring(0, maxLength) + '...');
   }
 
   getSupportedFormats() {

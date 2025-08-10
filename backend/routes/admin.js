@@ -40,8 +40,15 @@ router.use(auth, requireAdmin);
 // USER MANAGEMENT
 // =====================================================
 
+const { query, body, param } = require('express-validator');
+const validate = require('../middleware/validate');
+
 // Get all users with pagination
-router.get('/users', async (req, res) => {
+router.get('/users', [
+  query('page').optional().isInt({ min: 1 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+  query('search').optional().isString().trim().isLength({ max: 100 })
+], validate, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -85,7 +92,7 @@ router.get('/users', async (req, res) => {
 });
 
 // Get user details
-router.get('/users/:userId', async (req, res) => {
+router.get('/users/:userId', [param('userId').isUUID()], validate, async (req, res) => {
   try {
     const user = await User.findByPk(req.params.userId, {
       attributes: { exclude: ['password'] },
@@ -119,7 +126,14 @@ router.get('/users/:userId', async (req, res) => {
 });
 
 // Update user
-router.put('/users/:userId', async (req, res) => {
+router.put('/users/:userId', [
+  param('userId').isUUID(),
+  body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
+  body('email').optional().isEmail(),
+  body('planStatus').optional().isIn(['free', 'pro', 'enterprise']),
+  body('isActive').optional().isBoolean(),
+  body('isPaidUser').optional().isBoolean(),
+], validate, async (req, res) => {
   try {
     const { name, email, planStatus, isActive, isPaidUser } = req.body;
     
@@ -154,7 +168,7 @@ router.put('/users/:userId', async (req, res) => {
 });
 
 // Delete user
-router.delete('/users/:userId', async (req, res) => {
+router.delete('/users/:userId', [param('userId').isUUID()], validate, async (req, res) => {
   try {
     const user = await User.findByPk(req.params.userId);
     if (!user) {
@@ -184,7 +198,10 @@ router.delete('/users/:userId', async (req, res) => {
 // =====================================================
 
 // Get all token balances
-router.get('/tokens', async (req, res) => {
+router.get('/tokens', [
+  query('page').optional().isInt({ min: 1 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+], validate, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -219,7 +236,11 @@ router.get('/tokens', async (req, res) => {
 });
 
 // Update user token balance
-router.put('/tokens/:userId/:modelId', async (req, res) => {
+router.put('/tokens/:userId/:modelId', [
+  param('userId').isUUID(),
+  param('modelId').isString().trim().isLength({ min: 1, max: 100 }),
+  body('balance').isInt({ min: 0 })
+], validate, async (req, res) => {
   try {
     const { balance } = req.body;
     
@@ -248,7 +269,7 @@ router.put('/tokens/:userId/:modelId', async (req, res) => {
 });
 
 // Get token usage statistics
-router.get('/tokens/usage', async (req, res) => {
+router.get('/tokens/usage', [query('days').optional().isInt({ min: 1, max: 90 }).toInt()], validate, async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 7;
     
@@ -283,7 +304,7 @@ router.get('/tokens/usage', async (req, res) => {
 // =====================================================
 
 // Get comprehensive analytics
-router.get('/analytics', async (req, res) => {
+router.get('/analytics', [query('days').optional().isInt({ min: 1, max: 180 }).toInt()], validate, async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
     
@@ -403,7 +424,10 @@ router.get('/system/database', async (req, res) => {
 // =====================================================
 
 // Get all payments
-router.get('/payments', async (req, res) => {
+router.get('/payments', [
+  query('page').optional().isInt({ min: 1 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+], validate, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -438,7 +462,10 @@ router.get('/payments', async (req, res) => {
 });
 
 // Update payment status
-router.put('/payments/:paymentId', async (req, res) => {
+router.put('/payments/:paymentId', [
+  param('paymentId').isUUID(),
+  body('status').isIn(['pending', 'completed', 'failed', 'refunded'])
+], validate, async (req, res) => {
   try {
     const { status } = req.body;
     

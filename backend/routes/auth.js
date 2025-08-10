@@ -6,15 +6,22 @@ const ModelTokenBalance = require('../models/ModelTokenBalance');
 const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
-const { logger } = require('../index');
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
+const auth = require('../middleware/auth');
+const logger = require('../utils/logger');
+const EmailVerificationToken = require('../models/EmailVerificationToken');
 
 const router = express.Router();
 
 // Rate limiter for login
 const loginLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 5, // limit each IP to 5 requests per windowMs
-  message: { error: 'Too many login attempts from this IP, please try again after a minute.' }
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.body?.email || req.ip,
+  message: { error: 'Too many login attempts, please try again shortly.' }
 });
 
 // Helper to generate refresh token
@@ -103,6 +110,7 @@ router.post('/register', [
     user = await User.create({
       email,
       password: hashedPassword,
+      emailVerified: false,
     });
 
     // Initialize model-specific token balances for new user
@@ -112,23 +120,14 @@ router.post('/register', [
       balance: 100 // Default tokens for new users
     });
 
-    logger.info({ action: 'register', userId: user.id, email, result: 'success' });
+    // Create email verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    await EmailVerificationToken.create({ userId: user.id, token: verificationToken, expiresAt });
 
-    const payload = {
-      user: {
-        id: user.id,
-      },
-    };
-
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: 3600 },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token });
-      }
-    );
+    // TODO: Send email via configured provider. For now return the token for testing.
+    logger.info({ action: 'register', userId: user.id, email, result: 'pending_verification' });
+    res.status(201).json({ msg: 'Registration successful. Please verify your email.', verificationToken });
   } catch (err) {
     logger.error({ action: 'register', email, error: err.message });
     res.status(500).json({ msg: 'Server error' });
@@ -214,10 +213,45 @@ router.post('/login', [
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
+    // Account lockout check
+    if (user.lockoutUntil && new Date(user.lockoutUntil) > new Date()) {
+      return res.status(423).json({ msg: 'Account locked. Try again later.' });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       logger.warn({ action: 'login', email, userId: user.id, result: 'invalid_credentials' });
+      // Increment failed attempts and apply lockout
+      const attempts = (user.failedLoginAttempts || 0) + 1;
+      const MAX_ATTEMPTS = 5;
+      const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+      user.failedLoginAttempts = attempts;
+      if (attempts >= MAX_ATTEMPTS) {
+        user.lockoutUntil = new Date(Date.now() + LOCKOUT_MS);
+        user.failedLoginAttempts = 0;
+      }
+      await user.save();
       return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+
+    // Reset failed attempts on successful login
+    user.failedLoginAttempts = 0;
+    user.lockoutUntil = null;
+    await user.save();
+
+    // Check if 2FA is enabled for the user
+    if (user.twoFactorEnabled) {
+      // If 2FA is enabled, we need a 2FA token to complete login
+      // Return a special response indicating 2FA is required
+      return res.status(200).json({ 
+        msg: '2FA required', 
+        twoFactorRequired: true,
+        userId: user.id
+      });
+    }
+
+    if (!user.emailVerified) {
+      return res.status(403).json({ msg: 'Email not verified' });
     }
 
     logger.info({ action: 'login', userId: user.id, email, result: 'success' });
@@ -229,7 +263,7 @@ router.post('/login', [
     };
 
     // Access token (short-lived)
-    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 3600 });
+    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 900 }); // 15 min
     // Refresh token (long-lived)
     const refreshToken = generateRefreshToken();
     user.refreshToken = refreshToken;
@@ -244,6 +278,47 @@ router.post('/login', [
     res.json({ accessToken });
   } catch (err) {
     logger.error({ action: 'login', email, error: err.message });
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/verify-email:
+ *   post:
+ *     summary: Verify user's email address
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ token ]
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email verified
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/verify-email', async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ msg: 'Token required' });
+  try {
+    const record = await EmailVerificationToken.findOne({ where: { token } });
+    if (!record || new Date(record.expiresAt) < new Date()) {
+      return res.status(400).json({ msg: 'Invalid or expired token' });
+    }
+    const user = await User.findByPk(record.userId);
+    if (!user) return res.status(400).json({ msg: 'Invalid token' });
+    user.emailVerified = true;
+    await user.save();
+    await record.destroy();
+    res.json({ msg: 'Email verified' });
+  } catch (err) {
     res.status(500).json({ msg: 'Server error' });
   }
 });
@@ -292,12 +367,117 @@ router.post('/refresh-token', async (req, res) => {
         id: user.id,
       },
     };
-    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 3600 });
+    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 900 });
     logger.info({ action: 'refresh-token', userId: user.id, result: 'success' });
     res.json({ accessToken });
   } catch (err) {
     logger.error({ action: 'refresh-token', error: err.message });
     res.status(500).send('Server error');
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/2fa/verify-login:
+ *   post:
+ *     summary: Verify 2FA token during login
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - token
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 example: 123e4567-e89b-12d3-a456-426614174000
+ *               token:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       200:
+ *         description: Login successful with 2FA
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *       400:
+ *         description: Invalid 2FA token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 msg:
+ *                   type: string
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Server error
+ */
+// 2FA verification during login
+router.post('/2fa/verify-login', async (req, res) => {
+  try {
+    const { userId, token } = req.body;
+    
+    // Find user
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Check if 2FA is enabled
+    if (!user.twoFactorEnabled) {
+      return res.status(400).json({ msg: '2FA not enabled for this account' });
+    }
+
+    // Verify the token
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: token,
+      window: 2 // Allow a small window for time drift
+    });
+
+    if (!verified) {
+      return res.status(400).json({ msg: 'Invalid 2FA token' });
+    }
+
+    // Generate tokens for successful 2FA verification
+    const payload = {
+      user: {
+        id: user.id,
+      },
+    };
+
+    // Access token (short-lived)
+    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 900 });
+    // Refresh token (long-lived)
+    const refreshToken = generateRefreshToken();
+    user.refreshToken = refreshToken;
+    await user.save();
+    
+    // Set refresh token as HTTP-only cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    
+    logger.info({ action: 'login_2fa', userId: user.id, result: 'success' });
+    res.json({ accessToken });
+  } catch (err) {
+    logger.error({ action: 'login_2fa', error: err.message });
+    res.status(500).json({ msg: 'Server error' });
   }
 });
 
@@ -339,4 +519,188 @@ router.post('/logout', async (req, res) => {
   res.json({ msg: 'Logged out' });
 });
 
-module.exports = router;
+// 2FA route handlers
+const setup2FA = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Generate a secret key
+    const secret = speakeasy.generateSecret({
+      name: `ChatBot (${user.email})`,
+      issuer: 'ChatBot'
+    });
+
+    // Generate QR code URL
+    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
+
+    // Save the secret to the user (but don't enable 2FA yet)
+    user.twoFactorSecret = secret.base32;
+    await user.save();
+
+    res.json({
+      secret: secret.base32,
+      qrCodeUrl
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+const verify2FASetup = async (req, res) => {
+  try {
+    const { token } = req.body;
+    const user = await User.findByPk(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    if (!user.twoFactorSecret) {
+      return res.status(400).json({ msg: '2FA not set up' });
+    }
+
+    // Verify the token
+    const verified = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: 'base32',
+      token: token,
+      window: 2 // Allow a small window for time drift
+    });
+
+    if (!verified) {
+      return res.status(400).json({ msg: 'Invalid token' });
+    }
+
+    // Generate backup codes
+    const backupCodes = [];
+    for (let i = 0; i < 10; i++) {
+      backupCodes.push(
+        Math.random().toString(36).substring(2, 10).toUpperCase()
+      );
+    }
+
+    // Enable 2FA and save backup codes
+    user.twoFactorEnabled = true;
+    user.twoFactorBackupCodes = backupCodes;
+    await user.save();
+
+    res.json({
+      msg: '2FA successfully enabled',
+      backupCodes
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+const disable2FA = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Disable 2FA
+    user.twoFactorEnabled = false;
+    user.twoFactorSecret = null;
+    user.twoFactorBackupCodes = null;
+    await user.save();
+
+    res.json({ msg: '2FA successfully disabled' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+const getBackupCodes = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    if (!user.twoFactorEnabled) {
+      return res.status(404).json({ msg: '2FA not enabled' });
+    }
+
+    res.json({ backupCodes: user.twoFactorBackupCodes });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+const verifyBackupCode = async (req, res) => {
+  try {
+    const { email, password, backupCode } = req.body;
+    
+    // Find user
+    let user = await User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
+    }
+
+    // Check if 2FA is enabled
+    if (!user.twoFactorEnabled) {
+      return res.status(400).json({ msg: '2FA not enabled for this account' });
+    }
+
+    // Verify backup code
+    const isValidBackupCode = user.twoFactorBackupCodes && 
+                             user.twoFactorBackupCodes.includes(backupCode.toUpperCase());
+    
+    if (!isValidBackupCode) {
+      return res.status(400).json({ msg: 'Invalid backup code' });
+    }
+
+    // Remove the used backup code
+    user.twoFactorBackupCodes = user.twoFactorBackupCodes.filter(
+      code => code !== backupCode.toUpperCase()
+    );
+    await user.save();
+
+    // Generate tokens
+    const payload = {
+      user: {
+        id: user.id,
+      },
+    };
+
+    // Access token (short-lived)
+    const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: 900 });
+    // Refresh token (long-lived)
+    const refreshToken = generateRefreshToken();
+    user.refreshToken = refreshToken;
+    await user.save();
+    
+    // Set refresh token as HTTP-only cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    
+    res.json({ accessToken });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+module.exports = {
+  default: router,
+  setup2FA,
+  verify2FASetup,
+  disable2FA,
+  getBackupCodes,
+  verifyBackupCode
+};

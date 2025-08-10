@@ -13,6 +13,7 @@ const AdView = require('../models/AdView');
 const Payment = require('../models/Payment');
 const FileUpload = require('../models/FileUpload');
 const Memory = require('../models/Memory');
+const EmailVerificationToken = require('../models/EmailVerificationToken');
 
 // Define associations
 const setupAssociations = () => {
@@ -44,6 +45,8 @@ const setupAssociations = () => {
   FileUpload.belongsTo(Conversation, { foreignKey: 'conversationId' });
   Memory.belongsTo(User, { foreignKey: 'userId' });
   Message.belongsTo(Conversation, { foreignKey: 'conversationId' });
+  EmailVerificationToken.belongsTo(User, { foreignKey: 'userId' });
+  User.hasMany(EmailVerificationToken, { foreignKey: 'userId', onDelete: 'CASCADE' });
 
   console.log('✅ Model associations configured');
 };

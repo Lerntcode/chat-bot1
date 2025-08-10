@@ -16,6 +16,23 @@ const Memory = sequelize.define('Memory', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
+  category: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+}, {
+  indexes: [
+    {
+      fields: ['userId']
+    },
+    {
+      fields: ['timestamp']
+    }
+  ]
 });
 
 User.hasMany(Memory, { foreignKey: 'userId', onDelete: 'CASCADE' });

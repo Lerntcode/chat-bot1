@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { FixedSizeList as List } from 'react-window';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
@@ -8,14 +9,28 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Auth from './components/Auth';
-import PricingPage from './components/PricingPage'; // Import the new PricingPage
-import AdminPanel from './components/AdminPanel'; // Import the admin panel
-import { Route, Routes, Link, BrowserRouter, useNavigate } from 'react-router-dom'; // Import routing components
+import { Route, Routes, Link, BrowserRouter, useNavigate } from 'react-router-dom';
 import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-// Remove: import Select from 'react-select';
 import ModeSelectionPage from './ModeSelectionPage';
 import CodingMode from './components/CodingMode';
+import DOMPurify from 'dompurify';
+import { Suspense, lazy } from 'react';
+
+const PricingPage = lazy(() => import('./components/PricingPage'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+
+// Centralized sanitizer for any user/AI-provided content rendered as HTML
+function sanitizeContent(content) {
+  if (content === null || content === undefined) return '';
+  const stringContent = typeof content === 'string' ? content : String(content);
+  return DOMPurify.sanitize(stringContent, {
+    ALLOWED_TAGS: [
+      'b', 'i', 'em', 'strong', 'a', 'code', 'pre', 'br', 'p', 'ul', 'ol', 'li', 'span', 'small'
+    ],
+    ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class']
+  });
+}
 
 const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   const [displayedText, setDisplayedText] = useState('');
@@ -120,7 +135,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }) => {
 // ErrorBanner component
 const ErrorBanner = ({ message, onClose }) => (
   <div className="error-banner" role="alert" aria-live="assertive">
-    <span>{message}</span>
+    <span dangerouslySetInnerHTML={{ __html: sanitizeContent(message) }} />
     <button className="close-btn" onClick={onClose} aria-label="Dismiss error">&times;</button>
   </div>
 );
@@ -133,12 +148,12 @@ const NotificationBanner = ({ warnings, onClose }) => {
       <div>
         {warnings.lowTokenWarning && (
           <div>
-            <strong>Low Token Warning:</strong> Your token balance is low for model(s): {warnings.lowTokenModels.join(', ')}. Please watch ads or upgrade to continue chatting.
+            <strong>Low Token Warning:</strong> Your token balance is low for model(s): <span dangerouslySetInnerHTML={{ __html: sanitizeContent(warnings.lowTokenModels.join(', ')) }} />. Please watch ads or upgrade to continue chatting.
           </div>
         )}
         {warnings.paidExpiryWarning && (
           <div>
-            <strong>Paid Plan Expiring Soon:</strong> Your paid access expires in {warnings.paidExpiryDaysLeft} day(s). Renew soon to avoid losing premium features.
+            <strong>Paid Plan Expiring Soon:</strong> Your paid access expires in <span dangerouslySetInnerHTML={{ __html: sanitizeContent(warnings.paidExpiryDaysLeft.toString()) }} /> day(s). Renew soon to avoid losing premium features.
           </div>
         )}
       </div>
@@ -209,7 +224,7 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
       {(chat.user || chat.isUserMessage) && (
         <div className="d-flex justify-content-end">
           <div className="chat-bubble user-bubble new-message">
-            <strong>You:</strong> {chat.user || chat.message}
+            <strong>You:</strong> <span dangerouslySetInnerHTML={{ __html: sanitizeContent(chat.user || chat.message) }} />
           </div>
         </div>
       )}
@@ -224,9 +239,16 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
               </span>
             </div>
             {chat.isTyping ? (
-              <TypingEffect text="" isTyping={true} showDots={true} />
+              <div className="thinking-animation">
+                <div className="thinking-text">Bot is thinking</div>
+                <div className="thinking-dots">
+                  <span className="dot dot-1">•</span>
+                  <span className="dot dot-2">•</span>
+                  <span className="dot dot-3">•</span>
+                </div>
+              </div>
             ) : (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{chat.bot}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{sanitizeContent(chat.bot)}</ReactMarkdown>
             )}
             {!chat.isTyping && (
               <i className="fas fa-volume-up speaker-icon" onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}></i>
@@ -248,7 +270,7 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
   ));
 
 
-function App() {
+const App = () => {
   // === 1. All hooks at the very top ===
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -281,6 +303,10 @@ function App() {
   const [modelTokenBalances, setModelTokenBalances] = useState({});
   const [contextMenu, setContextMenu] = useState({ show: false, conversationId: null });
   const [mode, setMode] = useState('conversation');
+  const [convPage, setConvPage] = useState(1);
+  const [convLimit] = useState(20);
+  const [hasMoreConversations, setHasMoreConversations] = useState(true);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const navigate = useNavigate();
   const recognition = useMemo(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -341,11 +367,20 @@ function App() {
     fetchAvailableModels();
     const fetchConversations = async () => {
       try {
+        setIsLoadingConversations(true);
         const response = await axios.get('http://localhost:5000/api/v1/conversations', {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
-      });
-        setConversations(response.data);
-    } catch (error) {
+          params: { page: convPage, limit: convLimit },
+          headers: { 'x-auth-token': localStorage.getItem('token') }
+        });
+        const payload = response.data;
+        if (Array.isArray(payload)) {
+          setConversations(payload);
+          setHasMoreConversations(false);
+        } else {
+          setConversations(prev => convPage === 1 ? payload.items : [...prev, ...payload.items]);
+          setHasMoreConversations(convPage < (payload.pagination?.totalPages || 1));
+        }
+      } catch (error) {
       if (error.response && error.response.status === 401) {
         setIsAuthenticated(false);
         localStorage.removeItem('token');
@@ -356,10 +391,12 @@ function App() {
       } else {
           alert('Error fetching conversations.');
       }
-    }
-  };
+      } finally {
+        setIsLoadingConversations(false);
+      }
+    };
     fetchConversations();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, convPage, convLimit]);
   useEffect(() => {
     if (!isAuthenticated) return;
       fetchUserStatus();
@@ -624,6 +661,83 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  const loadMoreConversations = () => {
+    if (isLoadingConversations || !hasMoreConversations) return;
+    setConvPage(prev => prev + 1);
+  };
+
+  const VirtualizedConversationList = ({ items, onClickItem, onDeleteItem, contextMenu, handleContextMenu, loadMore, hasMore }) => {
+    const itemCount = hasMore ? items.length + 1 : items.length;
+    const Row = ({ index, style }) => {
+      if (index === items.length) {
+        // Loader row
+        return (
+          <div style={{ ...style, padding: '8px 16px', color: '#aaa' }}>
+            {hasMore ? 'Loading more…' : ''}
+          </div>
+        );
+      }
+      const conv = items[index];
+      return (
+        <div
+          style={{ ...style, cursor: 'pointer' }}
+          className="list-group-item list-group-item-action bg-transparent text-light d-flex justify-content-between align-items-center position-relative"
+          onClick={() => onClickItem(conv.id)}
+        >
+          <div>
+            <div>
+              <span dangerouslySetInnerHTML={{ __html: sanitizeContent(conv.title) }} />
+              {conv.lastMessageTimestamp && (
+                <small className="d-block text-muted">{new Date(conv.lastMessageTimestamp).toLocaleString()}</small>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="link"
+            className="text-light p-0 three-dots-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleContextMenu(e, conv.id);
+            }}
+          >
+            <i className="fas fa-ellipsis-v"></i>
+          </Button>
+          {contextMenu.show && contextMenu.conversationId === conv.id && (
+            <div className="context-menu">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteItem(conv.id);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    };
+    return (
+      <div onScroll={(e) => {
+        const node = e.currentTarget;
+        if (node.scrollTop + node.clientHeight >= node.scrollHeight - 10) {
+          loadMore();
+        }
+      }}>
+        <List
+          height={400}
+          itemCount={itemCount}
+          itemSize={72}
+          width={'100%'}
+        >
+          {Row}
+        </List>
+      </div>
+    );
+  };
+
   const getCurrentModelTokenBalance = () => {
     return modelTokenBalances[selectedModel] || 0;
   };
@@ -646,117 +760,116 @@ function App() {
   };
 
   const handleSendMessage = async (userQuery) => {
-    if ((!message && !selectedFile) || isSending) return;
-    
-    // Immediately add user message to conversation
+    if ((!userQuery && !selectedFile) || isSending) return;
+
     const userMessage = {
-      id: Date.now(), // temporary ID
+      id: Date.now(),
       user: userQuery,
       timestamp: new Date().toISOString(),
       isUserMessage: true
     };
 
     setMessage('');
-    
-    if (!currentConversation.id) {
-      setCurrentConversation({ id: null, messages: [userMessage] });
-    } else {
-      setCurrentConversation(prev => ({ 
-        ...prev, 
-        messages: [...(prev.messages || []), userMessage] 
-      }));
-    }
-
     setIsSending(true);
-    
-    // Add a typing message for the bot (dots animation)
-    const typingMessage = {
-      id: Date.now() + 1, // temporary ID
-      bot: '', // Will be filled with actual response
+
+    // Create a placeholder for the bot's response and add both messages to state
+    const botMessagePlaceholder = {
+      id: Date.now() + 1,
+      bot: '',
       timestamp: new Date().toISOString(),
-      isTyping: true,
-      typingText: '', // Empty for dots animation
-      showDots: true // Flag to show dots instead of typing text
+      isTyping: true
     };
-    
-    setCurrentConversation(prev => ({ 
-      ...prev, 
-      messages: [...(prev.messages || []), typingMessage] 
+
+    setCurrentConversation(prev => ({
+      ...prev,
+      messages: [...(prev.messages || []), userMessage, botMessagePlaceholder]
     }));
-    
+
     const formData = new FormData();
-    formData.append('message', message);
+    formData.append('message', userQuery);
     if (selectedFile) {
       formData.append('file', selectedFile);
     }
     if (currentConversation.id) {
       formData.append('conversationId', currentConversation.id);
     }
-    formData.append('mode', mode);
-    const systemPrompt = MODE_PROMPTS[mode] || "";
-    const finalPrompt = `${systemPrompt} ${userQuery}`;
+
     try {
-      const response = await axios.post('http://localhost:5000/api/v1/chat', formData, {
+      const response = await fetch(`http://localhost:5000/api/v1/chat?model=${selectedModel}`, {
+        method: 'POST',
         headers: {
-          'Content-Type': 'multipart/form-data',
           'x-auth-token': localStorage.getItem('token'),
         },
-        params: {
-          model: selectedModel
-        }
+        body: formData,
       });
-      console.log('New message response:', response.data);
-      const { conversationId, message: newMessage } = response.data;
 
-      // The `newMessage` from the server contains both user and bot parts,
-      // so we destructure it to exclude the `user` part from the bot's message bubble.
-      const { user, ...botMessage } = newMessage;
-      const finalBotMessage = { ...botMessage, isTyping: false };
+      if (!response.body) throw new Error("Streaming response not supported.");
 
-      // This logic is the same for both new and existing conversations.
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let conversationId = currentConversation.id;
+
+      let done = false;
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const parts = chunk.split('\n\n').filter(Boolean);
+
+        for (const part of parts) {
+          if (part.startsWith('data: ')) {
+            const dataStr = part.substring(6);
+            if (dataStr === '[DONE]') {
+              done = true;
+              break;
+            }
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (data.conversationId && !conversationId) {
+                conversationId = data.conversationId;
+                setCurrentConversation(prev => ({ ...prev, id: data.conversationId }));
+                setConversations(prev => [...prev, { id: data.conversationId, title: userQuery.substring(0, 30) + '...', lastMessageTimestamp: new Date().toISOString() }]);
+              }
+
+              if (data.chunk) {
+                setCurrentConversation(prev => ({
+                  ...prev,
+                  messages: prev.messages.map(msg =>
+                    msg.id === botMessagePlaceholder.id
+                      ? { ...msg, bot: msg.bot + data.chunk }
+                      : msg
+                  )
+                }));
+              }
+
+              if (data.error) throw new Error(data.error);
+
+            } catch (e) {
+              console.error("Failed to parse stream data:", dataStr, e);
+            }
+          }
+        }
+      }
+
+      // Finalize the message state
       setCurrentConversation(prev => ({
-        id: conversationId, // Set or update the conversation ID
+        ...prev,
         messages: prev.messages.map(msg =>
-          msg.id === typingMessage.id ? finalBotMessage : msg
+          msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg
         )
       }));
 
-      // If it's a new conversation, add it to the sidebar list.
-      if (!currentConversation.id) {
-        const newConversation = { id: conversationId, title: newMessage.user?.substring(0, 30) + '...' || 'New Chat', lastMessageTimestamp: newMessage.timestamp };
-        setConversations(prevConversations => [...prevConversations, newConversation]);
-      } else {
-        // If it's an existing conversation, update its timestamp and title in the sidebar.
-        setConversations(prevConversations =>
-          prevConversations.map(conv =>
-            conv.id === conversationId
-              ? { ...conv, lastMessageTimestamp: newMessage.timestamp, title: newMessage.user?.substring(0, 30) + '...' || conv.title }
-              : conv
-          )
-        );
-      }
-      setMessage('');
       setSelectedFile(null);
-      fetchUserStatus(); // Refresh user status after sending message
+      fetchUserStatus();
+
     } catch (error) {
-      // Remove the temporary messages on error
-      setCurrentConversation(prev => ({ 
-        ...prev, 
-        messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== typingMessage.id)
+      setCurrentConversation(prev => ({
+        ...prev,
+        messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== botMessagePlaceholder.id)
       }));
-      
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
-        setError(null);
-        return;
-      } else if (error.response && error.response.status === 403) {
-        setError(error.response.data.error || 'Insufficient tokens.');
-      } else if (error.response && error.response.status === 429) {
-        setError('You are being rate limited. Please wait and try again.');
-      } else {
-        setError(error.response?.data?.error || 'Error sending message.');
-      }
+      setError(error.message || 'Error sending message.');
     } finally {
       setIsSending(false);
     }
@@ -834,45 +947,15 @@ function App() {
             <button className="modern-button w-100 mb-3" onClick={() => setShowUsageDashboard(true)}>
               <i className="fas fa-chart-bar me-2"></i>Usage Dashboard
             </button>
-            <ul className="list-group list-group-flush">
-              {conversations.map(conv => (
-                <li
-                  key={conv.id}
-                  className="list-group-item list-group-item-action bg-transparent text-light d-flex justify-content-between align-items-center position-relative"
-                  onClick={() => handleConversationClick(conv.id)}
-                  >
-                  <div>
-                    <div>
-                      {conv.title}
-                      {conv.lastMessageTimestamp && (
-                        <small className="d-block text-muted">{new Date(conv.lastMessageTimestamp).toLocaleString()}</small>
-                      )}
-                    </div>
-                  </div>
-                    <Button
-                      variant="link"
-                      className="text-light p-0 three-dots-button"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent parent li onClick
-                        handleContextMenu(e, conv.id);
-                      }}
-                    >
-                      <i className="fas fa-ellipsis-v"></i>
-                    </Button>
-                  {/* Context Menu */}
-                    {contextMenu.show && contextMenu.conversationId === conv.id && (
-                      <div className="context-menu">
-                        <Button variant="danger" size="sm" onClick={(e) => {
-                          e.stopPropagation(); // Prevent parent li onClick
-                          handleDeleteConversation(conv.id);
-                        }}>
-                            Delete
-                          </Button>
-                        </div>
-                    )}
-                </li>
-              ))}
-            </ul>
+            <VirtualizedConversationList 
+              items={conversations}
+              onClickItem={handleConversationClick}
+              onDeleteItem={handleDeleteConversation}
+              contextMenu={contextMenu}
+              handleContextMenu={handleContextMenu}
+              loadMore={loadMoreConversations}
+              hasMore={hasMoreConversations}
+            />
             </div>
             <div className="token-logout-container">
               {/* Token card */}
@@ -963,7 +1046,11 @@ function App() {
           </div>
           <Routes>
             <Route path="/mode" element={<ModeSelectionPage onSelect={(selectedMode) => { setMode(selectedMode); navigate('/'); }} />} />
-            <Route path="/pricing" element={<PricingPage userStatus={userStatus} modelTokenBalances={modelTokenBalances} handleWatchAd={handleWatchAd} handlePurchaseTier={handlePurchaseTier} />} />
+            <Route path="/pricing" element={
+              <Suspense fallback={<div style={{ padding: 16 }}>Loading pricing...</div>}>
+                <PricingPage userStatus={userStatus} modelTokenBalances={modelTokenBalances} handleWatchAd={handleWatchAd} handlePurchaseTier={handlePurchaseTier} />
+              </Suspense>
+            } />
             <Route path="/" element={
               <>
                 {mode === 'coding' ? (
@@ -1033,7 +1120,7 @@ function App() {
                         autoFocus
                       />
                     ) : (
-                      <span>{mem.text}</span>
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeContent(mem.text) }} />
                     )}
                     <div>
                       <Button variant="outline-light" size="sm" onClick={() => setEditingMemory(mem)} className="me-2">Edit</Button>
@@ -1054,10 +1141,12 @@ function App() {
         </Modal>
         
         {/* Admin Panel */}
-        <AdminPanel 
-          isVisible={showAdminPanel} 
-          onClose={() => setShowAdminPanel(false)} 
-        />
+        <Suspense fallback={null}>
+          <AdminPanel 
+            isVisible={showAdminPanel} 
+            onClose={() => setShowAdminPanel(false)} 
+          />
+        </Suspense>
 
         <UsageDashboard show={showUsageDashboard} onClose={() => setShowUsageDashboard(false)} />
 
@@ -1066,7 +1155,7 @@ function App() {
             <Modal.Title>Conversation Summary</Modal.Title>
           </Modal.Header>
           <Modal.Body>
-            <p>{summaryContent}</p>
+            <p dangerouslySetInnerHTML={{ __html: sanitizeContent(summaryContent) }} />
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowSummaryModal(false)}>
