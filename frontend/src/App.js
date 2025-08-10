@@ -802,6 +802,39 @@ const App = () => {
         body: formData,
       });
 
+      // Handle non-2xx responses early
+      if (!response.ok) {
+        let errMsg = `Request failed (${response.status})`;
+        try {
+          const data = await response.json();
+          if (data?.error) errMsg = data.error;
+        } catch (_) {}
+        // Remove messages and surface error
+        setCurrentConversation(prev => ({
+          ...prev,
+          messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== botMessagePlaceholder.id)
+        }));
+        throw new Error(errMsg);
+      }
+
+      const ctype = response.headers.get('content-type') || '';
+      const isSSE = ctype.includes('text/event-stream');
+      if (!isSSE) {
+        // Not streaming: try to parse JSON and surface error or message
+        try {
+          const data = await response.json();
+          if (data?.error) throw new Error(data.error);
+        } catch (e) {
+          throw e instanceof Error ? e : new Error('Unexpected non-stream response');
+        }
+        // Fallback if no chunk data came: end typing
+        setCurrentConversation(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
+        }));
+        return;
+      }
+
       if (!response.body) throw new Error("Streaming response not supported.");
 
       const reader = response.body.getReader();

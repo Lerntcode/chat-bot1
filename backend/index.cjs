@@ -587,12 +587,6 @@ app.post(
       }
     }
 
-    // --- Prepare for Streaming ---
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
     // --- Conversation and Message Processing ---
     let conversation = initialConversationId
       ? await Conversation.findByPk(initialConversationId, { include: [{ model: Message, as: 'Messages' }] })
@@ -716,7 +710,20 @@ app.post(
     // Combine system message with conversation history and current message
     const messagesForAI = [systemMessage, ...conversationHistory, { role: "user", content: userMessage }];
 
-    const stream = await createStream({ model: selectedModel, messages: messagesForAI });
+    // Create provider stream BEFORE sending SSE headers so we can return JSON on error
+    let stream;
+    try {
+      stream = await createStream({ model: selectedModel, messages: messagesForAI });
+    } catch (err) {
+      logger.error({ action: 'chat_stream_error', userId, error: err?.message || String(err) });
+      return res.status(502).json({ error: `Upstream model error: ${err?.message || 'unknown'}` });
+    }
+
+    // --- Prepare for Streaming (after stream created) ---
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
 
     const heartbeat = setInterval(() => {
       if (!res.headersSent) {
@@ -727,15 +734,23 @@ app.post(
         res.write(`data: ${Date.now()}\n\n`);
       }
     }, 15000);
-    for await (const chunk of stream) {
-      if (clientClosed) break;
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        const filtered = filterReasoningDelta(content);
-        if (filtered) {
-          botResponseText += filtered;
-          res.write(`data: ${JSON.stringify({ chunk: filtered })}\n\n`);
+    try {
+      for await (const chunk of stream) {
+        if (clientClosed) break;
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          const filtered = filterReasoningDelta(content);
+          if (filtered) {
+            botResponseText += filtered;
+            res.write(`data: ${JSON.stringify({ chunk: filtered })}\n\n`);
+          }
         }
+      }
+    } catch (streamErr) {
+      logger.error({ action: 'chat_stream_error', userId, error: streamErr?.message || String(streamErr) });
+      if (!res.writableEnded) {
+        res.write('event: error\n');
+        res.write(`data: ${JSON.stringify({ error: streamErr?.message || 'Streaming failed' })}\n\n`);
       }
     }
     clearInterval(heartbeat);
