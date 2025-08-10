@@ -32,6 +32,9 @@ const ALLOW_DB_SYNC = parseBool(process.env.ALLOW_DB_SYNC, NODE_ENV !== 'product
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
 const QWEN_API_KEY = process.env.QWEN_API_KEY;
+// Support both uppercase and lowercase key names for convenience
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || process.env.google_api;
+const GEMINI_FLASH_MODEL = process.env.GEMINI_FLASH_MODEL || process.env.gemini_flash_model;
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const REDIS_URL = process.env.REDIS_URL || '';
@@ -46,8 +49,8 @@ function validateEnv() {
     if (missing.length > 0) {
       throw new Error(`Missing required env vars in production: ${missing.join(', ')}`);
     }
-    if (!OPENAI_API_KEY && !TOGETHER_API_KEY && !QWEN_API_KEY) {
-      throw new Error('At least one AI provider key must be set (OPENAI_API_KEY, TOGETHER_API_KEY, or QWEN_API_KEY)');
+    if (!OPENAI_API_KEY && !TOGETHER_API_KEY && !QWEN_API_KEY && !GOOGLE_API_KEY) {
+      throw new Error('At least one AI provider key must be set (OPENAI_API_KEY, TOGETHER_API_KEY, QWEN_API_KEY, or GOOGLE_API_KEY)');
     }
     if (!CORS_ORIGINS) {
       throw new Error('CORS_ORIGINS must be set in production to a comma-separated allowlist');
@@ -73,6 +76,8 @@ module.exports = {
   OPENAI_API_KEY,
   TOGETHER_API_KEY,
   QWEN_API_KEY,
+  GOOGLE_API_KEY,
+  GEMINI_FLASH_MODEL,
   JWT_SECRET,
   REDIS_URL,
 };
