@@ -223,15 +223,15 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
       {/* User Message */}
       {(chat.user || chat.isUserMessage) && (
         <div className="d-flex justify-content-end">
-          <div className="chat-bubble user-bubble new-message">
+          <div className="chat-bubble user-bubble new-message" role="article" aria-label="User message">
             <strong>You:</strong> <span dangerouslySetInnerHTML={{ __html: sanitizeContent(chat.user || chat.message) }} />
           </div>
         </div>
       )}
       {/* Bot Message */}
-      {chat.bot && (
+      {(chat.isTyping || !!chat.bot) && (
         <div className="d-flex justify-content-start">
-          <div className={`chat-bubble bot-bubble${chat.isTyping ? ' new-message' : ''}`}>
+          <div className={`chat-bubble bot-bubble${chat.isTyping ? ' new-message' : ''}`} role="article" aria-label="Assistant message">
             <div className="bot-header">
               <strong>Bot</strong>
               <span className="model-indicator">
@@ -239,12 +239,11 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
               </span>
             </div>
             {chat.isTyping ? (
-              <div className="thinking-animation">
-                <div className="thinking-text">Bot is thinking</div>
+              <div className="chatgpt-thinking" role="status" aria-live="polite" aria-busy="true" aria-label="Assistant is typing">
                 <div className="thinking-dots">
-                  <span className="dot dot-1">•</span>
-                  <span className="dot dot-2">•</span>
-                  <span className="dot dot-3">•</span>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
+                  <div className="dot"></div>
                 </div>
               </div>
             ) : (

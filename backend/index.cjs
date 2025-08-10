@@ -502,6 +502,76 @@ app.post(
     }
   };
 
+  // Simple memory categorization and expiration helpers
+  function categorizeMemory(text) {
+    const t = text.toLowerCase();
+    if (t.includes('email') || t.includes('@')) return 'contact';
+    if (t.includes('birthday') || t.includes('anniversary')) return 'personal';
+    if (t.includes('meeting') || t.includes('call') || t.includes('schedule')) return 'schedule';
+    if (t.includes('project') || t.includes('task') || t.includes('deadline')) return 'work';
+    return 'general';
+  }
+  function getExpiryForCategory(category) {
+    const now = new Date();
+    const map = {
+      schedule: 7,      // 7 days
+      work: 30,         // 30 days
+      personal: 180,    // 6 months
+      contact: 365,     // 1 year
+      general: 90       // 90 days
+    };
+    const days = map[category] ?? 90;
+    return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  }
+
+  // Stream-safe filter to remove internal reasoning before sending to client
+  let _inHiddenReasoningBlock = false; // persists for this request scope
+  let _filterBuffer = '';
+  function filterReasoningDelta(input) {
+    if (!input) return '';
+    _filterBuffer += input;
+    let output = '';
+    while (true) {
+      if (_inHiddenReasoningBlock) {
+        const closeIdx = _filterBuffer.indexOf('</think>');
+        if (closeIdx === -1) {
+          // Still inside hidden block; consume all and wait for closing tag in future chunks
+          _filterBuffer = '';
+          return output;
+        }
+        // Drop everything up to and including closing tag
+        _filterBuffer = _filterBuffer.slice(closeIdx + 8);
+        _inHiddenReasoningBlock = false;
+        continue;
+      }
+      const openIdx = _filterBuffer.indexOf('<think>');
+      if (openIdx === -1) {
+        // No hidden block markers; emit all we have
+        output += _filterBuffer;
+        _filterBuffer = '';
+        break;
+      }
+      // Emit content before opening tag, then enter hidden block
+      output += _filterBuffer.slice(0, openIdx);
+      _filterBuffer = _filterBuffer.slice(openIdx + 7);
+      _inHiddenReasoningBlock = true;
+    }
+    // Additional conservative cleanup: remove typical reasoning lead-ins per line
+    const reasoningPatterns = [
+      /^\s*(okay,?\s*)?(let me|i (need|should|will|am going to|think)|thinking|step by step|first,|second,|third,|next,)/i,
+      /^\s*(here's my plan|i'll start by|i will start by|let's|lets|we (should|need to))/i
+    ];
+    output = output
+      .split(/(\r?\n)/)
+      .map(seg => {
+        if (seg === '\n' || seg === '\r\n') return seg;
+        const line = seg;
+        return reasoningPatterns.some(rx => rx.test(line)) ? '' : line;
+      })
+      .join('');
+    return output;
+  }
+
   try {
     const user = await User.findByPk(userId);
     if (!user) {
@@ -604,10 +674,15 @@ app.post(
       }
       
       if (memoryToSave) {
-          await Memory.create({ text: memoryToSave, timestamp: new Date().toISOString(), userId: req.user.id });
-          
+          const category = categorizeMemory(memoryToSave);
+          const expiresAt = getExpiryForCategory(category);
+          await Memory.create({ text: memoryToSave, category, expiresAt, timestamp: new Date().toISOString(), userId: req.user.id });
+
           // Invalidate memory cache
           await cache.del(`memory:${req.user.id}`);
+
+          // Opportunistic cleanup of expired memories
+          try { await Memory.destroy({ where: { userId: req.user.id, expiresAt: { [Op.lt]: new Date() } } }); } catch (_) {}
       }
 
       // If it was an explicit command, we can just send the confirmation and stop.
@@ -627,11 +702,19 @@ app.post(
     }
 
     // --- AI Stream Generation ---
-    const messagesForAI = (conversation.Messages || []).flatMap(msg => [
+    const systemMessage = {
+      role: "system",
+      content: "You are a helpful AI assistant. When responding to user queries, only provide the final answer without showing your internal reasoning or thought process. Do not prefix your responses with any indicators like 'Answer:' or 'Response:'. Just provide the direct answer to the user's query."
+    };
+    
+    // Get conversation history
+    const conversationHistory = (conversation.Messages || []).flatMap(msg => [
       ...(msg.user ? [{ role: "user", content: msg.user }] : []),
       ...(msg.bot ? [{ role: "assistant", content: msg.bot }] : [])
     ]);
-    messagesForAI.push({ role: "user", content: userMessage });
+    
+    // Combine system message with conversation history and current message
+    const messagesForAI = [systemMessage, ...conversationHistory, { role: "user", content: userMessage }];
 
     const stream = await createStream({ model: selectedModel, messages: messagesForAI });
 
@@ -648,8 +731,11 @@ app.post(
       if (clientClosed) break;
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
-        botResponseText += content;
-        res.write(`data: ${JSON.stringify({ chunk: content })}\n\n`);
+        const filtered = filterReasoningDelta(content);
+        if (filtered) {
+          botResponseText += filtered;
+          res.write(`data: ${JSON.stringify({ chunk: filtered })}\n\n`);
+        }
       }
     }
     clearInterval(heartbeat);
@@ -977,17 +1063,18 @@ Summary:`;
 app.get('/api/v1/memory', auth, async (req, res, next) => {
   try {
     // Try to get from cache first
-    const cacheKey = `memory:${req.user.id}`;
+    const includeExpired = req.query.includeExpired === 'true';
+    const cacheKey = `memory:${req.user.id}:includeExpired=${includeExpired}`;
     let cachedMemory = await cache.get(cacheKey);
     
     if (cachedMemory) {
       return res.json(cachedMemory);
     }
 
-    const memories = await Memory.findAll({
-      where: { userId: req.user.id },
-      order: [['timestamp', 'DESC']],
-    });
+    const where = includeExpired
+      ? { userId: req.user.id }
+      : { userId: req.user.id, [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] };
+    const memories = await Memory.findAll({ where, order: [['timestamp', 'DESC']] });
     
     // Cache the result for 30 seconds
     await cache.set(cacheKey, memories, 30);
@@ -1071,19 +1158,26 @@ app.get('/api/v1/memory', auth, async (req, res, next) => {
 // Update a memory
 app.put('/api/v1/memory/:id', auth, [
   param('id').isUUID().withMessage('invalid id'),
-  body('text').isString().trim().isLength({ min: 1, max: 10000 }).withMessage('text required (max 10k chars)'),
+  body('text').optional().isString().trim().isLength({ min: 1, max: 10000 }).withMessage('text max 10k chars'),
+  body('category').optional().isString().trim().isLength({ min: 1, max: 50 }).withMessage('invalid category'),
+  body('expiresAt').optional().isISO8601().withMessage('expiresAt must be ISO date'),
 ], validate, async (req, res, next) => {
-  const { text } = req.body;
+  const { text, category, expiresAt } = req.body;
   try {
     const memory = await Memory.findOne({
       where: { id: req.params.id, userId: req.user.id },
     });
     if (memory) {
-      memory.text = text;
+      if (typeof text === 'string') memory.text = text;
+      if (typeof category === 'string') memory.category = category;
+      if (typeof expiresAt === 'string') memory.expiresAt = new Date(expiresAt);
       await memory.save();
       
       // Invalidate memory cache
-      await cache.del(`memory:${req.user.id}`);
+      await Promise.all([
+        cache.del(`memory:${req.user.id}:includeExpired=true`),
+        cache.del(`memory:${req.user.id}:includeExpired=false`)
+      ]);
       
       res.json(memory);
     } else {
