@@ -686,7 +686,15 @@ app.post(
               bot: botResponseText,
               timestamp: new Date().toISOString()
           };
-          await Message.create({ ...botResponse, conversationId: conversation.id });
+          const friendlyLabel = (m => {
+            if (m === 'gpt-4.1-nano') {
+              return process.env.GEMINI_FLASH_MODEL?.includes('2.5') ? 'Gemini 2.5 Flash' : 'Gemini Flash';
+            }
+            if (m === 'gpt-4.1-mini') return 'Qwen 30B A3B';
+            if (m === 'gpt-4.1') return 'Qwen 235B A22B';
+            return m;
+          })(selectedModel);
+          await Message.create({ ...botResponse, conversationId: conversation.id, modelUsed: selectedModel, metadata: { ...(botResponse.metadata||{}), modelLabel: friendlyLabel } });
           await conversation.update({ lastMessageTimestamp: new Date() });
           res.json({ conversationId: conversation.id, message: botResponse });
           return;
@@ -764,7 +772,15 @@ app.post(
         await cache.del(`user-status:${userId}`);
     }
 
-    await Message.create({ bot: botResponseText, conversationId: conversation.id, timestamp: new Date().toISOString(), fileInfo });
+    const friendlyLabel2 = (m => {
+      if (m === 'gpt-4.1-nano') {
+        return process.env.GEMINI_FLASH_MODEL?.includes('2.5') ? 'Gemini 2.5 Flash' : 'Gemini Flash';
+      }
+      if (m === 'gpt-4.1-mini') return 'Qwen 30B A3B';
+      if (m === 'gpt-4.1') return 'Qwen 235B A22B';
+      return m;
+    })(selectedModel);
+    await Message.create({ bot: botResponseText, conversationId: conversation.id, timestamp: new Date().toISOString(), fileInfo, modelUsed: selectedModel, metadata: { ...(fileInfo?.metadata||{}), modelLabel: friendlyLabel2 } });
     await conversation.update({ 
         lastMessageTimestamp: new Date(), 
         title: conversation.title === 'New Chat' ? userMessage.substring(0, 30) + '...' : conversation.title 
@@ -1584,6 +1600,10 @@ app.get('/api/v1/supported-formats', (req, res) => {
   const fileProcessor = new FileProcessor();
   res.json({ formats: fileProcessor.getSupportedFormats() });
 });
+
+// Register admin routes
+const adminRoutes = require('./routes/admin');
+app.use('/api/v1/admin', adminRoutes);
 
 // Remove duplicate health route (kept single definition above)
 

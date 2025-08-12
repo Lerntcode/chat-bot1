@@ -10,15 +10,24 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Auth from './components/Auth';
 import { Route, Routes, Link, BrowserRouter, useNavigate } from 'react-router-dom';
-import UsageDashboard from './components/UsageDashboard';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import ModeSelectionPage from './ModeSelectionPage';
-import CodingMode from './components/CodingMode';
 import DOMPurify from 'dompurify';
 import { Suspense, lazy } from 'react';
+import { preloadRoutes, measurePerformance, optimizeChunkLoading } from './bundleOptimization';
+import { LoadingSpinner, TypingIndicator, EnhancedButton, AnimatedMessage, ChatListSkeleton } from './components/LoadingComponents';
 
-const PricingPage = lazy(() => import('./components/PricingPage'));
-const AdminPanel = lazy(() => import('./components/AdminPanel'));
+// Import components directly (temporarily disabled lazy loading)
+import PricingPage from './components/PricingPage';
+import AdminPanel from './components/AdminPanel';
+import UsageDashboard from './components/UsageDashboard';
+import ModeSelectionPage from './ModeSelectionPage';
+import CodingMode from './components/CodingMode';
+
+// Simple token estimator: rough heuristic ~4 chars/token
+function estimateTokens(text = '') {
+  const len = (text || '').length;
+  return Math.max(1, Math.ceil(len / 4));
+}
 
 // Centralized sanitizer for any user/AI-provided content rendered as HTML
 function sanitizeContent(content) {
@@ -218,54 +227,158 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
 ));
 
 // Move ChatMessage above App
-  const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation }) => (
-    <React.Fragment key={chat.id || chat._id || chat.timestamp || index}>
+  const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation, editingMessageId, editingText, setEditingText, startEditMessage, saveEditResend, cancelEdit, onToggleReaction }) => (
+    <AnimatedMessage key={chat.id || chat._id || chat.timestamp || index} isNew={isLastMessage}>
       {/* User Message */}
       {(chat.user || chat.isUserMessage) && (
-        <div className="d-flex justify-content-end">
-          <div className="chat-bubble user-bubble new-message" role="article" aria-label="User message">
-            <strong>You:</strong> <span dangerouslySetInnerHTML={{ __html: sanitizeContent(chat.user || chat.message) }} />
-          </div>
-        </div>
-      )}
-      {/* Bot Message */}
-      {(chat.isTyping || !!chat.bot) && (
-        <div className="d-flex justify-content-start">
-          <div className={`chat-bubble bot-bubble${chat.isTyping ? ' new-message' : ''}`} role="article" aria-label="Assistant message">
-            <div className="bot-header">
-              <strong>Bot</strong>
-              <span className="model-indicator">
-                {availableModels.find(m => m.id === selectedModel)?.name || 'AI'}
-              </span>
-            </div>
-            {chat.isTyping ? (
-              <div className="chatgpt-thinking" role="status" aria-live="polite" aria-busy="true" aria-label="Assistant is typing">
-                <div className="thinking-dots">
-                  <div className="dot"></div>
-                  <div className="dot"></div>
-                  <div className="dot"></div>
+        <div className="d-flex justify-content-end mb-3" role="group" aria-label="User message">
+          <div className="user-message p-3 rounded">
+            {chat.tokenMeter && (
+              <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'right' }}>
+                ≈ {chat.tokenMeter.total || 0} tok
+              </div>
+            )}
+            {editingMessageId === chat.id ? (
+              <div className="edit-container">
+                <textarea
+                  value={editingText}
+                  onChange={(e) => setEditingText(e.target.value)}
+                  className="form-control mb-2"
+                  rows={3}
+                  style={{ background: 'var(--input-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}
+                  aria-label="Edit your message"
+                  placeholder="Edit your message..."
+                />
+                <div className="d-flex gap-2" role="group" aria-label="Edit message actions">
+                  <EnhancedButton
+                    size="sm"
+                    onClick={saveEditResend}
+                    aria-label="Save changes and resend message"
+                  >
+                    Save & Resend
+                  </EnhancedButton>
+                  <EnhancedButton
+                    variant="secondary"
+                    size="sm"
+                    onClick={cancelEdit}
+                    aria-label="Cancel editing"
+                  >
+                    Cancel
+                  </EnhancedButton>
                 </div>
               </div>
             ) : (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{sanitizeContent(chat.bot)}</ReactMarkdown>
+              <>
+                <div className="message-content-wrapper">
+                  <div>
+                    <strong>You:</strong> <span dangerouslySetInnerHTML={{ __html: sanitizeContent(chat.user || chat.message) }} />
+                    {chat.edited && <small className="ms-2 text-muted" aria-label="This message was edited">(edited)</small>}
+                  </div>
+                  <div className="user-message-actions">
+                    <button
+                      className="icon-button"
+                      aria-label="Edit message"
+                      title="Edit & resend"
+                      onClick={() => startEditMessage(chat)}
+                    >
+                      <i className="fas fa-pen"></i>
+                    </button>
+                    <div className="reactions-bar">
+                      {['up','down','smile'].map(k => (
+                        <button
+                          key={k}
+                          className={`reaction-btn ${chat.userReaction === k ? 'active' : ''}`}
+                          onClick={() => onToggleReaction && onToggleReaction(chat.id, k)}
+                          aria-pressed={chat.userReaction === k}
+                          title={k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'}
+                        >
+                          {k === 'up' ? '👍' : k === 'down' ? '👎' : '🙂'}
+                          <span className="count">{(chat.reactions && chat.reactions[k]) || 0}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Assistant Message */}
+      {(chat.bot || chat.isTyping) && (
+        <div className="d-flex justify-content-start mb-3" role="group" aria-label="Assistant message">
+          <div className="assistant-message p-3 rounded">
+            {chat.tokenMeter && (
+              <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8 }}>
+                <span>
+                  ≈ {chat.tokenMeter.total || 0} tok
+                  {chat.isTyping && <span> (streaming)</span>}
+                </span>
+              </div>
+            )}
+            {chat.isTyping ? (
+              <TypingIndicator modelName={chat.metadata?.modelLabel} />
+            ) : (
+              <div className="message-content-wrapper">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{sanitizeContent(chat.bot)}</ReactMarkdown>
+                <div className="bot-message-actions">
+                  <button
+                    className="icon-button"
+                    aria-label="Copy message to clipboard"
+                    title="Copy"
+                    onClick={() => navigator.clipboard.writeText(chat.bot || '')}
+                  >
+                    <i className="fas fa-copy" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label="Regenerate this response"
+                    title="Regenerate"
+                    onClick={() => window.__regenerateFromMessageIndex && window.__regenerateFromMessageIndex(index)}
+                  >
+                    <i className="fas fa-rotate-right" aria-hidden="true"></i>
+                  </button>
+                  <div className="reactions-bar" role="group" aria-label="Message reactions">
+                    {['up','down','smile'].map(k => (
+                      <button
+                        key={k}
+                        className={`reaction-btn ${chat.userReaction === k ? 'active' : ''}`}
+                        onClick={() => onToggleReaction && onToggleReaction(chat.id, k)}
+                        aria-pressed={chat.userReaction === k}
+                        aria-label={`${k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'} this message. Current count: ${(chat.reactions && chat.reactions[k]) || 0}`}
+                        title={k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'}
+                      >
+                        {k === 'up' ? '👍' : k === 'down' ? '👎' : '🙂'}
+                        <span className="count" aria-hidden="true">{(chat.reactions && chat.reactions[k]) || 0}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
             {!chat.isTyping && (
-              <i className="fas fa-volume-up speaker-icon" onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}></i>
+              <i 
+                className="fas fa-volume-up speaker-icon" 
+                onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}
+                aria-label="Read message aloud"
+                role="button"
+                tabIndex="0"
+              ></i>
             )}
             {chat.bot && conversationId && !chat.isTyping && (
               <Button
                 variant="link"
                 className="summarize-button"
                 onClick={() => handleSummarizeConversation(conversationId)}
+                aria-label="Summarize this conversation"
               >
                 Summarize Conversation
               </Button>
             )}
-
           </div>
         </div>
       )}
-    </React.Fragment>
+    </AnimatedMessage>
   ));
 
 
@@ -281,6 +394,8 @@ const App = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 640);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [supportedFormats, setSupportedFormats] = useState([]);
@@ -291,6 +406,8 @@ const App = () => {
   const [showNotification, setShowNotification] = useState(true);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [summaryContent, setSummaryContent] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editingText, setEditingText] = useState('');
   const [availableModels, setAvailableModels] = useState([
     { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', description: 'Fastest for low-latency tasks (Powered by Mixtral)', baseTokenCost: 20 },
     { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', description: 'Affordable model balancing speed and intelligence', baseTokenCost: 100 },
@@ -339,6 +456,11 @@ const App = () => {
     document.body.className = theme + '-theme';
     localStorage.setItem('theme', theme);
   }, [theme]);
+  // One-time cleanup of legacy reduced-motion state
+  useEffect(() => {
+    document.body.classList.remove('reduced-motion');
+    try { localStorage.removeItem('reducedMotion'); } catch (_) {}
+  }, []);
   useEffect(() => {
     if (!recognition) return;
     recognition.onresult = (event) => {
@@ -396,10 +518,160 @@ const App = () => {
     };
     fetchConversations();
   }, [isAuthenticated, convPage, convLimit]);
+
+  // Inline edit-resend handlers
+  const startEditMessage = useCallback((chat) => {
+    if (isSending) return; // avoid editing during send
+    setEditingMessageId(chat.id);
+    setEditingText(chat.user || chat.message || '');
+  }, [isSending]);
+
+  const cancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingText('');
+  }, []);
+
+  const saveEditResend = useCallback(async () => {
+    if (!editingMessageId) return;
+    const newText = (editingText || '').trim();
+    if (!newText) return;
+    // Update the specific user message locally and mark as edited
+    setCurrentConversation(prev => ({
+      ...prev,
+      messages: (prev.messages || []).map(m =>
+        m.id === editingMessageId
+          ? { ...m, user: newText, message: newText, edited: true }
+          : m
+      )
+    }));
+    cancelEdit();
+    // Resend as a new message in the flow
+    await handleSendMessage(newText);
+  }, [editingMessageId, editingText]);
+
+  // Regenerate: find the nearest preceding user message for the given assistant index
+  const regenerateFromMessageIndex = useCallback(async (assistantIndex) => {
+    if (isSending) return;
+    const msgs = currentConversation.messages || [];
+    let i = assistantIndex - 1;
+    while (i >= 0) {
+      const m = msgs[i];
+      if (m && (m.user || m.isUserMessage)) {
+        const text = m.user || m.message || '';
+        if (text.trim()) {
+          await handleSendMessage(text);
+        }
+        break;
+      }
+      i--;
+    }
+  }, [isSending, currentConversation.messages]);
+
+  // Expose regenerate for toolbar buttons
+  useEffect(() => {
+    window.__regenerateFromMessageIndex = regenerateFromMessageIndex;
+    return () => {
+      if (window.__regenerateFromMessageIndex === regenerateFromMessageIndex) {
+        window.__regenerateFromMessageIndex = undefined;
+      }
+    };
+  }, [regenerateFromMessageIndex]);
+
+  // Toggle reactions per message
+  const toggleReaction = useCallback((messageId, key) => {
+    setCurrentConversation(prev => ({
+      ...prev,
+      messages: (prev.messages || []).map(m => {
+        if (m.id !== messageId) return m;
+        const reactions = { up: 0, down: 0, smile: 0, ...(m.reactions || {}) };
+        let userReaction = m.userReaction || null;
+        if (userReaction === key) {
+          reactions[key] = Math.max(0, (reactions[key] || 0) - 1);
+          userReaction = null;
+        } else {
+          if (userReaction) reactions[userReaction] = Math.max(0, (reactions[userReaction] || 0) - 1);
+          reactions[key] = (reactions[key] || 0) + 1;
+          userReaction = key;
+        }
+        return { ...m, reactions, userReaction };
+      })
+    }));
+  }, []);
   useEffect(() => {
     if (!isAuthenticated) return;
       fetchUserStatus();
   }, [isAuthenticated]);
+
+  // Bundle optimization initialization
+  useEffect(() => {
+    // Initialize performance monitoring
+    measurePerformance();
+    
+    // Preload critical routes after initial load
+    preloadRoutes();
+    
+    // Optimize chunk loading
+    optimizeChunkLoading();
+  }, []);
+
+  // Mobile detection and responsive handling
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 640;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setSidebarOpen(false); // Close sidebar on desktop
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Touch gesture handling for mobile
+  useEffect(() => {
+    if (!isMobile) return;
+
+    let startX = 0;
+    let startY = 0;
+    
+    const handleTouchStart = (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    };
+
+    const handleTouchMove = (e) => {
+      if (!startX || !startY) return;
+      
+      const deltaX = e.touches[0].clientX - startX;
+      const deltaY = e.touches[0].clientY - startY;
+      
+      // Swipe right to open sidebar (from left edge)
+      if (startX < 20 && deltaX > 50 && Math.abs(deltaY) < 100) {
+        setSidebarOpen(true);
+      }
+      
+      // Swipe left to close sidebar
+      if (sidebarOpen && deltaX < -50 && Math.abs(deltaY) < 100) {
+        setSidebarOpen(false);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      startX = 0;
+      startY = 0;
+    };
+
+    document.addEventListener('touchstart', handleTouchStart);
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isMobile, sidebarOpen]);
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (contextMenu.show) {
@@ -449,10 +721,17 @@ const App = () => {
           handleSummarizeConversation={handleSummarizeConversation}
           isLastMessage={index === currentConversation.messages.length - 1}
           isSending={isSending}
+          editingMessageId={editingMessageId}
+          editingText={editingText}
+          setEditingText={setEditingText}
+          startEditMessage={startEditMessage}
+          saveEditResend={saveEditResend}
+          cancelEdit={cancelEdit}
+          onToggleReaction={toggleReaction}
         />
       );
     });
-  }, [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, isSending]);
+  }, [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, isSending, toggleReaction]);
 
   // === AUTH CONDITIONAL RETURN (after all hooks) ===
   if (!isAuthenticated) {
@@ -765,18 +1044,23 @@ const App = () => {
       id: Date.now(),
       user: userQuery,
       timestamp: new Date().toISOString(),
-      isUserMessage: true
+      isUserMessage: true,
+      tokenMeter: { total: estimateTokens(userQuery || '') }
     };
 
     setMessage('');
     setIsSending(true);
 
     // Create a placeholder for the bot's response and add both messages to state
+    const selModelName = (availableModels.find(m => m.id === selectedModel)?.name) || 'AI';
     const botMessagePlaceholder = {
       id: Date.now() + 1,
       bot: '',
       timestamp: new Date().toISOString(),
-      isTyping: true
+      isTyping: true,
+      modelUsed: selectedModel,
+      metadata: { modelLabel: selModelName },
+      tokenMeter: { total: 0 }
     };
 
     setCurrentConversation(prev => ({
@@ -868,11 +1152,13 @@ const App = () => {
               if (data.chunk) {
                 setCurrentConversation(prev => ({
                   ...prev,
-                  messages: prev.messages.map(msg =>
-                    msg.id === botMessagePlaceholder.id
-                      ? { ...msg, bot: msg.bot + data.chunk }
-                      : msg
-                  )
+                  messages: prev.messages.map(msg => {
+                    if (msg.id === botMessagePlaceholder.id) {
+                      const newBot = (msg.bot || '') + data.chunk;
+                      return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
+                    }
+                    return msg;
+                  })
                 }));
               }
 
@@ -948,6 +1234,23 @@ const App = () => {
     }
   };
 
+  // Calculate time until token reset (midnight UTC)
+  const getTimeUntilReset = () => {
+    const now = new Date();
+    const utcNow = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + 1, // Next day
+      0, 0, 0, 0 // Midnight UTC
+    );
+    
+    const timeUntilReset = utcNow - now.getTime();
+    const hours = Math.floor(timeUntilReset / (1000 * 60 * 60));
+    const minutes = Math.floor((timeUntilReset % (1000 * 60 * 60)) / (1000 * 60));
+    
+    return `${hours}h ${minutes}m`;
+  };
+
   const handleDeleteMemory = async (id) => {
     try {
       await axios.delete(`http://localhost:5000/api/v1/memory/${id}`, {
@@ -973,67 +1276,118 @@ const App = () => {
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         <div className="d-flex">
-          <div className="sidebar">
-            <div className="chat-list-scroll">
-            <h3 className="text-center my-3">Previous Chats</h3>
-            <button className="modern-button w-100 mb-3" onClick={() => setShowUsageDashboard(true)}>
-              <i className="fas fa-chart-bar me-2"></i>Usage Dashboard
-            </button>
-            <VirtualizedConversationList 
-              items={conversations}
-              onClickItem={handleConversationClick}
-              onDeleteItem={handleDeleteConversation}
-              contextMenu={contextMenu}
-              handleContextMenu={handleContextMenu}
-              loadMore={loadMoreConversations}
-              hasMore={hasMoreConversations}
+          {isMobile && sidebarOpen && (
+            <div 
+              className="sidebar-overlay active" 
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar"
             />
-            </div>
-            <div className="token-logout-container">
-              {/* Token card */}
-              <div className="token-card">
-                {userStatus && (
-                  <div className="user-status-info text-center mt-2">
-                  <div className="token-counter">
-                    <div className="token-balance">
-                      <span className="token-icon">🪙</span>
-                      <span className="token-number">{getCurrentModelTokenBalance().toLocaleString()}</span>
-                      <span className="token-label">tokens</span>
-                    </div>
-                    {!userStatus.isPaidUser && (
-                      <div className="model-cost-info">
-                        <span className="current-model">
-                          {availableModels.find(m => m.id === selectedModel)?.name || 'Unknown'}
-                        </span>
-                        <span className="cost-info">
-                          (~{availableModels.find(m => m.id === selectedModel)?.baseTokenCost || 20} tokens/message)
-                        </span>
-                        <span className="messages-possible">
-                          ~{getCurrentModelMessagesPossible()} messages possible
-                        </span>
-                      </div>
-                    )}
-                    {userStatus.isPaidUser && (
-                      <div className="pro-status">
-                        <span className="pro-badge">PRO</span>
-                        <span className="pro-date">until {new Date(userStatus.paidUntil).toLocaleDateString()}</span>
-                      </div>
-                    )}
-                  </div>
-                  </div>
-                )}
+          )}
+          <div 
+            className={`sidebar ${isMobile && sidebarOpen ? 'open' : ''}`} 
+            role="complementary" 
+            aria-label="Chat history and navigation"
+          >
+            {/* Chat History Section */}
+            <div className="sidebar-section">
+              <h3>Chats</h3>
+              <EnhancedButton 
+                className="w-100 mb-2" 
+                onClick={() => setShowUsageDashboard(true)}
+                aria-label="Open usage dashboard"
+                style={{
+                  background: '#343541',
+                  border: 'none',
+                  color: '#ECECF1',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.2s ease'
+                }}
+              >
+                <i className="fas fa-chart-bar me-2" aria-hidden="true"></i>
+                <span>Usage Dashboard</span>
+              </EnhancedButton>
+              
+              <div className="chat-list-scroll">
+                <VirtualizedConversationList 
+                  items={conversations}
+                  onClickItem={handleConversationClick}
+                  onDeleteItem={handleDeleteConversation}
+                  contextMenu={contextMenu}
+                  handleContextMenu={handleContextMenu}
+                  loadMore={loadMoreConversations}
+                  hasMore={hasMoreConversations}
+                />
               </div>
-              {/* Logout button */}
-              <Button className="logout-btn" variant="outline-light" onClick={handleLogout} style={{ width: '100%', margin: 0 }}>Logout</Button>
+            </div>
+
+            {/* Account Section */}
+            <div className="sidebar-section">
+              <h3>Account</h3>
+              <div className="token-logout-container">
+
+                {/* Upgrade Button (for free users) */}
+                {userStatus && !userStatus.isPaidUser && (
+                  <Button 
+                    className="upgrade-btn w-100 mb-2" 
+                    variant="primary"
+                    onClick={() => window.location.href = '/pricing'}
+                    style={{
+                      background: 'linear-gradient(90deg, #19c37d 0%, #10a37f 100%)',
+                      border: 'none',
+                      fontWeight: 500,
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      transition: 'opacity 0.2s ease'
+                    }}
+                    aria-label="Upgrade to Pro"
+                  >
+                    <i className="fas fa-crown me-2" aria-hidden="true"></i>
+                    Upgrade to Pro
+                  </Button>
+                )}
+
+                {/* Logout button */}
+                <Button 
+                  className="logout-btn w-100" 
+                  variant="outline-secondary"
+                  onClick={handleLogout} 
+                  style={{
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    color: '#ECECF1',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    transition: 'background-color 0.2s ease, border-color 0.2s ease'
+                  }}
+                  aria-label="Logout from application"
+                >
+                  <i className="fas fa-sign-out-alt me-2" aria-hidden="true"></i>
+                  Logout
+                </Button>
+              </div>
             </div>
           </div>
 
           <div className="container d-flex flex-column vh-100 flex-grow-1 overflow-auto">
-          <div className="header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 24px', background: '#353744', minHeight: 56 }}>
+          <div 
+            className="header-row" 
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 24px', background: '#353744', minHeight: 56 }}
+            role="banner"
+            aria-label="Application header"
+          >
             <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Button className="modern-button" style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }} onClick={() => setShowSidebar(!showSidebar)}>
-                  Chats
-                </Button>
+              <Button 
+                className="modern-button" 
+                style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }} 
+                onClick={() => isMobile ? setSidebarOpen(!sidebarOpen) : setShowSidebar(!showSidebar)}
+                aria-label={isMobile ? 'Toggle mobile sidebar' : 'Toggle sidebar'}
+              >
+                {isMobile && <i className="fas fa-bars me-2" aria-hidden="true"></i>}
+                Chats
+              </Button>
                 {userStatus && (
                 <div className="quick-token-display" style={{ display: 'flex', alignItems: 'center', background: '#23272f', borderRadius: 8, padding: '6px 16px', fontSize: 15, height: 40, marginLeft: 4 }}>
                   <span className="quick-token-icon" style={{ fontSize: 18, marginRight: 6 }}>🪙</span>
@@ -1043,52 +1397,139 @@ const App = () => {
                       </span>
                   </div>
                 )}
-              <select
-                value={selectedModel}
-                onChange={e => setSelectedModel(e.target.value)}
-                style={{ marginLeft: 12, padding: '6px 12px', borderRadius: 8, fontSize: 15, height: 40, background: '#23272f', color: '#fff', border: '1px solid #444', outline: 'none', minWidth: 140 }}
-                aria-label="Select AI Model"
-              >
-                      {availableModels.map(model => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
+              <div className="model-selector-container" style={{ marginLeft: 12 }}>
+                <select
+                  value={selectedModel}
+                  onChange={e => setSelectedModel(e.target.value)}
+                  style={{
+                    appearance: 'none',
+                    padding: '8px 36px 8px 16px',
+                    borderRadius: 8,
+                    fontSize: 15,
+                    height: 40,
+                    background: '#2d333b',
+                    color: '#fff',
+                    border: '1px solid #444',
+                    outline: 'none',
+                    minWidth: 180,
+                    cursor: 'pointer',
+                    backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\' fill=\'%23adbac7\' viewBox=\'0 0 16 16\'%3E%3Cpath d=\'M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z\'/%3E%3C/svg%3E")',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 12px center',
+                    paddingRight: '36px',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                    fontFamily: 'inherit',
+                    fontWeight: 500
+                  }}
+                  aria-label="Select AI Model"
+                  id="model-selector"
+                >
+                  {availableModels.map(model => (
+                    <option 
+                      key={model.id} 
+                      value={model.id}
+                      style={{
+                        padding: '8px 16px',
+                        background: '#1e2228',
+                        color: '#fff',
+                        fontSize: '14px',
+                        border: 'none',
+                        outline: 'none'
+                      }}
+                    >
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+                <style jsx={"true"}>{`
+                  select:focus {
+                    border-color: #539bf5;
+                    box-shadow: 0 0 0 2px rgba(65, 132, 234, 0.3);
+                  }
+                  select:hover {
+                    background-color: #373e47;
+                    border-color: #539bf5;
+                  }
+                  select:active {
+                    transform: translateY(1px);
+                  }
+                  option {
+                    padding: 8px 16px;
+                    background: #1e2228;
+                    color: #fff;
+                  }
+                  option:checked, option:focus {
+                    background: #2d333b;
+                    color: #539bf5;
+                  }
+                `}</style>
+              </div>
                     </div>
             <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <button onClick={() => navigate('/mode')} style={{ padding: '6px 18px', borderRadius: 8, background: '#333', color: '#fff', border: 'none', fontWeight: 600, fontSize: 16, height: 40, cursor: 'pointer' }}>
                 Mode
               </button>
               <Link to="/pricing" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-                <Button variant="outline-light" className="modern-button" style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }}>Pricing & Upgrade</Button>
+                <Button 
+                  variant="primary" 
+                  className="modern-button" 
+                  style={{ 
+                    padding: '6px 18px', 
+                    fontSize: 16, 
+                    height: 40, 
+                    borderRadius: 8,
+                    backgroundColor: '#007bff',
+                    borderColor: '#007bff',
+                    color: 'white'
+                  }}
+                >
+                  Pricing & Upgrade
+                </Button>
               </Link>
               <Button 
-                variant="outline-light" 
+                variant="secondary" 
                 className="modern-button" 
-                style={{ fontSize: 16, height: 40, borderRadius: 8 }}
+                style={{ 
+                  fontSize: 16, 
+                  height: 40, 
+                  borderRadius: 8,
+                  backgroundColor: '#6c757d',
+                  borderColor: '#6c757d',
+                  color: 'white'
+                }}
                 onClick={() => setShowAdminPanel(true)}
               >
                 Admin Panel
               </Button>
-              <button className="theme-toggle-button" onClick={toggleTheme} style={{ height: 40, width: 40, borderRadius: 8, background: '#23272f', color: '#fff', border: 'none', marginLeft: 8 }}>
+              <button className="theme-toggle-button" onClick={toggleTheme} style={{ height: 40, width: 40, borderRadius: 8, background: '#23272f', color: '#fff', border: 'none', marginLeft: 8 }} aria-label="Toggle theme">
                 {theme === 'dark' ? <i className="fas fa-sun"></i> : <i className="fas fa-moon"></i>}
               </button>
             </div>
           </div>
           <Routes>
-            <Route path="/mode" element={<ModeSelectionPage onSelect={(selectedMode) => { setMode(selectedMode); navigate('/'); }} />} />
+            <Route path="/mode" element={
+              <Suspense fallback={<LoadingSpinner text="Loading mode selection..." />}>
+                <ModeSelectionPage onSelect={(selectedMode) => { setMode(selectedMode); navigate('/'); }} />
+              </Suspense>
+            } />
             <Route path="/pricing" element={
-              <Suspense fallback={<div style={{ padding: 16 }}>Loading pricing...</div>}>
+              <Suspense fallback={<LoadingSpinner text="Loading pricing..." />}>
                 <PricingPage userStatus={userStatus} modelTokenBalances={modelTokenBalances} handleWatchAd={handleWatchAd} handlePurchaseTier={handlePurchaseTier} />
               </Suspense>
             } />
             <Route path="/" element={
               <>
                 {mode === 'coding' ? (
-                  <CodingMode onSendMessage={handleSendMessage} chatMessages={currentConversation.messages} />
+                  <Suspense fallback={<LoadingSpinner text="Loading coding mode..." />}>
+                    <CodingMode onSendMessage={handleSendMessage} chatMessages={currentConversation.messages} />
+                  </Suspense>
                 ) : (
-                  <div className="flex-grow-1 rounded shadow-sm chat-window">
+                  <div 
+                    className="flex-grow-1 rounded shadow-sm chat-window"
+                    role="main"
+                    aria-label="Chat conversation"
+                  >
                     {error && <ErrorBanner message={error} onClose={() => setError(null)} />}
                     {userStatus && showNotification && (userStatus.lowTokenWarning || userStatus.paidExpiryWarning) && (
                       <NotificationBanner
@@ -1096,11 +1537,23 @@ const App = () => {
                         onClose={() => setShowNotification(false)}
                       />
                     )}
-                    {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
-                      <div className="no-messages-placeholder" style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}>
-                        No messages yet. Start the conversation!
-                      </div>
-                    )}
+                    <div 
+                      role="log" 
+                      aria-live="polite" 
+                      aria-label="Chat messages"
+                      className="chat-messages-container"
+                    >
+                      {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
+                        <div 
+                          className="no-messages-placeholder" 
+                          style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}
+                          role="status"
+                          aria-label="No messages yet"
+                        >
+                          No messages yet. Start the conversation!
+                        </div>
+                      )}
+                    </div>
                     {/* Always scroll to bottom */}
                     <div ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }} />
                   </div>
@@ -1138,11 +1591,13 @@ const App = () => {
               placeholder="Search memory..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Search chatbot memory"
+              role="searchbox"
             />
             {memory.length > 0 ? (
-              <ul className="list-group">
+              <ul className="list-group" role="list" aria-label="Memory items">
                 {memory.filter(mem => mem.text.toLowerCase().includes(searchTerm.toLowerCase())).map(mem => (
-                  <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center">
+                  <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center" role="listitem">
                     {editingMemory?.id === mem.id ? (
                       <input 
                         type="text" 
@@ -1155,8 +1610,23 @@ const App = () => {
                       <span dangerouslySetInnerHTML={{ __html: sanitizeContent(mem.text) }} />
                     )}
                     <div>
-                      <Button variant="outline-light" size="sm" onClick={() => setEditingMemory(mem)} className="me-2">Edit</Button>
-                      <Button variant="outline-danger" size="sm" onClick={() => handleDeleteMemory(mem.id)}>Delete</Button>
+                      <Button 
+                        variant="outline-light" 
+                        size="sm" 
+                        onClick={() => setEditingMemory(mem)} 
+                        className="me-2"
+                        aria-label={`Edit memory: ${mem.text.substring(0, 50)}...`}
+                      >
+                        Edit
+                      </Button>
+                      <Button 
+                        variant="outline-danger" 
+                        size="sm" 
+                        onClick={() => handleDeleteMemory(mem.id)}
+                        aria-label={`Delete memory: ${mem.text.substring(0, 50)}...`}
+                      >
+                        Delete
+                      </Button>
                     </div>
                   </li>
                 ))}
@@ -1180,7 +1650,9 @@ const App = () => {
           />
         </Suspense>
 
-        <UsageDashboard show={showUsageDashboard} onClose={() => setShowUsageDashboard(false)} />
+        <Suspense fallback={null}>
+          <UsageDashboard show={showUsageDashboard} onClose={() => setShowUsageDashboard(false)} />
+        </Suspense>
 
         <Modal show={showSummaryModal} onHide={() => setShowSummaryModal(false)} centered className="summary-modal">
           <Modal.Header closeButton>

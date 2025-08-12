@@ -228,6 +228,6 @@ const PricingPage = ({ userStatus, modelTokenBalances, handleWatchAd, handlePurc
       </div>
     </Container>
   );
-};
+}
 
 export default PricingPage;

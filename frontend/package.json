@@ -8,6 +8,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^7.2.0",
     "@mui/material": "^7.2.0",
+    "@stripe/stripe-js": "^7.8.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
@@ -31,7 +32,10 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "analyze": "set SOURCE_MAP=true&& react-scripts build && npx source-map-explorer 'build/static/js/*.js'"
+    "analyze": "set SOURCE_MAP=true&& react-scripts build && npx source-map-explorer 'build/static/js/*.js'",
+    "analyze:bundle": "npm run build && npx webpack-bundle-analyzer build/static/js/*.js",
+    "build:analyze": "set GENERATE_SOURCEMAP=true&& npm run build && npm run analyze:bundle",
+    "build:production": "set GENERATE_SOURCEMAP=false&& npm run build"
   },
   "eslintConfig": {
     "extends": [
@@ -50,9 +54,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  }
-  ,
+  },
   "devDependencies": {
-    "source-map-explorer": "^2.5.3"
+    "source-map-explorer": "^2.5.3",
+    "webpack-bundle-analyzer": "^4.10.2"
   }
 }
