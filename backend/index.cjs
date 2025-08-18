@@ -592,10 +592,7 @@ app.post(
       ? await Conversation.findByPk(initialConversationId, { include: [{ model: Message, as: 'Messages' }] })
       : await Conversation.create({ title: 'New Chat', lastMessageTimestamp: new Date(), userId });
 
-    if (!initialConversationId) {
-        // Send the new conversation ID to the client immediately
-        res.write(`data: ${JSON.stringify({ conversationId: conversation.id })}\n\n`);
-    }
+    // Note: do not write to response before SSE headers are set.
       
     let userMessage = message;
     let fileInfo = null;
@@ -732,6 +729,13 @@ app.post(
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+
+    // After headers are set, send the new conversationId once
+    if (!initialConversationId) {
+      try {
+        res.write(`data: ${JSON.stringify({ conversationId: conversation.id })}\n\n`);
+      } catch (_) {}
+    }
 
     const heartbeat = setInterval(() => {
       if (!res.headersSent) {
@@ -1394,7 +1398,7 @@ app.post('/api/v1/purchase-tier', auth, validate, async (req, res, next) => {
 app.get('/api/v1/user-status', auth, async (req, res, next) => {
   try {
     // Try to get from cache first
-    const cacheKey = `user-status:${req.user.id}`;
+    const cacheKey = `user-status:v2:${req.user.id}`;
     let cachedStatus = await cache.get(cacheKey);
     
     if (cachedStatus) {
@@ -1402,7 +1406,7 @@ app.get('/api/v1/user-status', auth, async (req, res, next) => {
     }
 
     const user = await User.findByPk(req.user.id, {
-      attributes: ['isPaidUser', 'paidUntil'],
+      attributes: ['isPaidUser', 'paidUntil', 'planStatus'],
     });
     if (!user) {
       const err = new Error('User not found');

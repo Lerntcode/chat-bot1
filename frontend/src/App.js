@@ -41,6 +41,22 @@ function sanitizeContent(content) {
   });
 }
 
+// Returns a human string and parts until next local midnight or a provided timestamp
+function getTimeUntilReset(nextResetAt) {
+  const now = new Date();
+  const target = nextResetAt ? new Date(nextResetAt) : new Date(now);
+  if (!nextResetAt) {
+    target.setHours(24, 0, 0, 0); // local midnight
+  }
+  const diffMs = Math.max(0, target.getTime() - now.getTime());
+  const totalMin = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMin / 60);
+  const minutes = totalMin % 60;
+  const seconds = Math.floor((diffMs % 60000) / 1000);
+  const label = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds}s`;
+  return { hours, minutes, seconds, label };
+}
+
 const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -112,6 +128,22 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   );
 };
 
+// Lightweight live countdown display
+const ResetCountdown = ({ nextResetAt = null }) => {
+  const [label, setLabel] = useState(getTimeUntilReset(nextResetAt).label);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLabel(getTimeUntilReset(nextResetAt).label);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [nextResetAt]);
+  return (
+    <span style={{ color: '#9ca3af', fontSize: 12 }} aria-label="Usage resets in">
+      Reset in {label}
+    </span>
+  );
+};
+
 const CodeBlock = ({ node, inline, className, children, ...props }) => {
   const match = /language-(\w+)/.exec(className || '');
   const [copied, setCopied] = useState(false);
@@ -171,58 +203,94 @@ const NotificationBanner = ({ warnings, onClose }) => {
   );
 };
 
-// Define ChatInput above App
-const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessage, selectedFile, setSelectedFile, supportedFormats, handlePlusClick, handleFileChange, handleToggleRecording, isRecording, fileInputRef }) => (
-  <div className="d-flex mt-3 align-items-center input-container">
-    <div className="input-left-icons">
-      <i className={`fas fa-plus ${isSending ? 'disabled' : ''}`} onClick={handlePlusClick}></i>
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        style={{ display: 'none' }} 
-        disabled={isSending}
-        accept={supportedFormats.map(format => `.${format}`).join(',')}
-      />
-      <div className="tools-label" title={`Supported formats: ${supportedFormats.join(', ')}`}> <i className="fas fa-wrench"></i> <span>Tools</span> </div>
-    </div>
-    {selectedFile && (
-      <div className="selected-file">
-        <div className="file-info">
-          <i className="fas fa-file"></i>
-          <span className="file-name">{selectedFile.name}</span>
-          <span className="file-size">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+// Define ChatInput above App (custom styled input box)
+const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessage, selectedFile, setSelectedFile, supportedFormats, handlePlusClick, handleFileChange, handleToggleRecording, isRecording, fileInputRef, mode, modePrompts }) => (
+  <div className="container_chat_bot" role="form" aria-label="Chat input">
+    <div className="container-chat-options">
+      <div className="chat">
+        <div className="chat-bot">
+          <textarea
+            id="chat_bot"
+            name="chat_bot"
+            placeholder={isSending ? 'Sending...' : (modePrompts && mode && modePrompts[mode] ? modePrompts[mode] : 'Imagine Something...✦˚')}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!isSending && message.trim()) handleSendMessage(message);
+              }
+            }}
+            aria-label="Type your message here"
+            rows={1}
+            disabled={isSending}
+          />
         </div>
-        <button onClick={() => setSelectedFile(null)} disabled={isSending}>&times;</button>
+        {selectedFile && (
+          <div className="selected-file" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 8px' }}>
+            <div className="file-info" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <i className="fas fa-file"></i>
+              <span className="file-name">{selectedFile.name}</span>
+              <span className="file-size">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+            </div>
+            <button onClick={() => setSelectedFile(null)} disabled={isSending} aria-label="Remove selected file" style={{ background: 'transparent', border: 'none', color: '#bbb', cursor: 'pointer' }}>&times;</button>
+          </div>
+        )}
+        <div className="options">
+          <div className="btns-add">
+            {/* Upload button */}
+            <button onClick={!isSending ? handlePlusClick : undefined} aria-label="Attach a file" disabled={isSending}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" role="img" aria-hidden="true">
+                <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8v8a5 5 0 1 0 10 0V6.5a3.5 3.5 0 1 0-7 0V15a2 2 0 0 0 4 0V8"></path>
+              </svg>
+            </button>
+            {/* Grid icon (visual only) */}
+            <button type="button" aria-label="Apps" disabled={isSending}>
+              <svg viewBox="0 0 24 24" height="20" width="20" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                <path d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm0 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zm0-8h6m-3-3v6" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" stroke="currentColor" fill="none"></path>
+              </svg>
+            </button>
+            {/* Globe icon (visual only) */}
+            <button type="button" aria-label="Globe" disabled={isSending}>
+              <svg viewBox="0 0 24 24" height="20" width="20" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10s-4.477 10-10 10m-2.29-2.333A17.9 17.9 0 0 1 8.027 13H4.062a8.01 8.01 0 0 0 5.648 6.667M10.03 13c.151 2.439.848 4.73 1.97 6.752A15.9 15.9 0 0 0 13.97 13zm9.908 0h-3.965a17.9 17.9 0 0 1-1.683 6.667A8.01 8.01 0 0 0 19.938 13M4.062 11h3.965A17.9 17.9 0 0 1 9.71 4.333A8.01 8.01 0 0 0 4.062 11m5.969 0h3.938A15.9 15.9 0 0 0 12 4.248A15.9 15.9 0 0 0 10.03 11m4.259-6.667A17.9 17.9 0 0 1 15.973 11h3.965a8.01 8.01 0 0 0-5.648-6.667" fill="currentColor"></path>
+              </svg>
+            </button>
+          </div>
+          <button className="btn-submit" onClick={!isSending && message.trim() ? () => handleSendMessage(message) : undefined} aria-label="Send message" disabled={isSending || !message.trim()}>
+            <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+              <path fill="#d1d5db" d="M7.233 20.987L21.29 13.88c1.482-.74 1.482-3.02 0-3.76L7.233 3.013A2 2 0 0 0 4.36 4.77l1.1 3.3a2 2 0 0 0 1.9 1.38h7.89c.62 0 .88.8.32 1.14L7.177 15.8a2 2 0 0 0-.92 1.11l-1.11 3.34a2 2 0 0 0 2.096 2.737z"></path>
+            </svg>
+          </button>
+        </div>
       </div>
-    )}
-    <input
-      type="text"
-      className="form-control border-0 flex-grow-1"
-      placeholder={isSending ? "Sending..." : "Ask anything"}
-      value={message}
-      onChange={e => setMessage(e.target.value)}
-      onKeyDown={e => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          handleSendMessage(message);
-        }
-      }}
-      disabled={isSending}
-      aria-label="Type your message here"
-    />
-    <div className="input-right-icons">
-      <i className={`fas fa-microphone ${isRecording ? 'recording' : ''} ${isSending ? 'disabled' : ''}`} onClick={handleToggleRecording}></i>
-      <i className="fas fa-waveform"></i>
-      <button 
-        className={`send-button ${message.trim() ? 'active' : ''}`}
-        onClick={() => handleSendMessage(message)}
-        aria-label="Send message"
-        disabled={isSending || !message.trim()}
-      >
-        <i className="fas fa-arrow-up"></i>
-      </button>
     </div>
+    {/* Quick actions outside the input box */}
+    <div className="tags" aria-label="Quick actions">
+      {mode && modePrompts && modePrompts[mode] && (
+        <span tabIndex={0} onClick={() => setMessage(modePrompts[mode])} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(modePrompts[mode]); }} aria-label={`Use ${mode} prompt`}>
+          Use {mode} prompt
+        </span>
+      )}
+      <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'Create an image of...')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'Create an image of...'); }} aria-label="Create An Image">
+        Create An Image
+      </span>
+      <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'Analyze this data: ')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'Analyze this data: '); }} aria-label="Analyse Data">
+        Analyse Data
+      </span>
+      <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'More: ')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'More: '); }} aria-label="More">
+        More
+      </span>
+    </div>
+    {/* Hidden file input */}
+    <input 
+      type="file" 
+      ref={fileInputRef} 
+      onChange={handleFileChange} 
+      style={{ display: 'none' }} 
+      disabled={isSending}
+      accept={supportedFormats.map(format => `.${format}`).join(',')}
+    />
   </div>
 ));
 
@@ -231,8 +299,8 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
     <AnimatedMessage key={chat.id || chat._id || chat.timestamp || index} isNew={isLastMessage}>
       {/* User Message */}
       {(chat.user || chat.isUserMessage) && (
-        <div className="d-flex justify-content-end mb-3" role="group" aria-label="User message">
-          <div className="user-message p-3 rounded">
+        <div className="d-flex justify-content-end mb-3">
+          <div className="user-message p-3 rounded" role="article" aria-label="User message" tabIndex={0}>
             {chat.tokenMeter && (
               <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'right' }}>
                 ≈ {chat.tokenMeter.total || 0} tok
@@ -306,8 +374,8 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
       )}
       {/* Assistant Message */}
       {(chat.bot || chat.isTyping) && (
-        <div className="d-flex justify-content-start mb-3" role="group" aria-label="Assistant message">
-          <div className="assistant-message p-3 rounded">
+        <div className="d-flex justify-content-start mb-3">
+          <div className="assistant-message p-3 rounded" role="article" aria-label="Assistant message" tabIndex={0}>
             {chat.tokenMeter && (
               <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8 }}>
                 <span>
@@ -982,16 +1050,29 @@ const App = () => {
           </Button>
           {contextMenu.show && contextMenu.conversationId === conv.id && (
             <div className="context-menu">
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteItem(conv.id);
-                }}
-              >
-                Delete
-              </Button>
+              <div className="d-flex flex-column gap-1">
+                <Button
+                  variant="outline-light"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    exportConversation(conv);
+                    handleContextMenu(e, conv.id);
+                  }}
+                >
+                  Export
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteItem(conv.id);
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -1104,19 +1185,59 @@ const App = () => {
       const ctype = response.headers.get('content-type') || '';
       const isSSE = ctype.includes('text/event-stream');
       if (!isSSE) {
-        // Not streaming: try to parse JSON and surface error or message
-        try {
-          const data = await response.json();
-          if (data?.error) throw new Error(data.error);
-        } catch (e) {
-          throw e instanceof Error ? e : new Error('Unexpected non-stream response');
+        // Not labeled as SSE. Try to read text; if it looks like SSE ('data:'), parse it manually.
+        const maybeText = await response.text();
+        if (maybeText.trim().startsWith('data:')) {
+          const lines = maybeText.split('\n\n').filter(Boolean);
+          let conversationId = currentConversation.id;
+          for (const part of lines) {
+            if (!part.startsWith('data: ')) continue;
+            const dataStr = part.substring(6);
+            if (dataStr === '[DONE]') break;
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.conversationId && !conversationId) {
+                conversationId = data.conversationId;
+                setCurrentConversation(prev => ({ ...prev, id: data.conversationId }));
+                setConversations(prev => [...prev, { id: data.conversationId, title: userQuery.substring(0, 30) + '...', lastMessageTimestamp: new Date().toISOString() }]);
+              }
+              if (data.chunk) {
+                setCurrentConversation(prev => ({
+                  ...prev,
+                  messages: prev.messages.map(msg => {
+                    if (msg.id === botMessagePlaceholder.id) {
+                      const newBot = (msg.bot || '') + data.chunk;
+                      return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
+                    }
+                    return msg;
+                  })
+                }));
+              }
+              if (data.error) throw new Error(data.error);
+            } catch (e) {
+              console.error('Failed to parse pseudo-SSE data:', dataStr, e);
+            }
+          }
+          // finalize
+          setCurrentConversation(prev => ({
+            ...prev,
+            messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
+          }));
+          return;
+        } else {
+          // True non-stream JSON response
+          try {
+            const data = JSON.parse(maybeText);
+            if (data?.error) throw new Error(data.error);
+          } catch (e) {
+            throw e instanceof Error ? e : new Error('Unexpected non-stream response');
+          }
+          setCurrentConversation(prev => ({
+            ...prev,
+            messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
+          }));
+          return;
         }
-        // Fallback if no chunk data came: end typing
-        setCurrentConversation(prev => ({
-          ...prev,
-          messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
-        }));
-        return;
       }
 
       if (!response.body) throw new Error("Streaming response not supported.");
@@ -1276,100 +1397,119 @@ const App = () => {
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         <div className="d-flex">
-          {isMobile && sidebarOpen && (
-            <div 
-              className="sidebar-overlay active" 
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
-            />
-          )}
+          {/* Mobile overlay: always in DOM for smooth fade */}
           <div 
-            className={`sidebar ${isMobile && sidebarOpen ? 'open' : ''}`} 
+            className={`sidebar-overlay ${isMobile && sidebarOpen ? 'active' : ''}`} 
+            onClick={() => isMobile && setSidebarOpen(false)}
+            aria-label="Close sidebar"
+          />
+          {/* Sidebar: always in DOM; smooth slide via CSS classes */}
+          <div 
+            className={`sidebar ${(isMobile ? sidebarOpen : showSidebar) ? 'open' : 'closed'}`} 
             role="complementary" 
             aria-label="Chat history and navigation"
+            aria-hidden={!(isMobile ? sidebarOpen : showSidebar)}
           >
-            {/* Chat History Section */}
-            <div className="sidebar-section">
-              <h3>Chats</h3>
-              <EnhancedButton 
-                className="w-100 mb-2" 
-                onClick={() => setShowUsageDashboard(true)}
-                aria-label="Open usage dashboard"
-                style={{
-                  background: '#343541',
-                  border: 'none',
-                  color: '#ECECF1',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'background-color 0.2s ease'
-                }}
-              >
-                <i className="fas fa-chart-bar me-2" aria-hidden="true"></i>
-                <span>Usage Dashboard</span>
-              </EnhancedButton>
-              
-              <div className="chat-list-scroll">
-                <VirtualizedConversationList 
-                  items={conversations}
-                  onClickItem={handleConversationClick}
-                  onDeleteItem={handleDeleteConversation}
-                  contextMenu={contextMenu}
-                  handleContextMenu={handleContextMenu}
-                  loadMore={loadMoreConversations}
-                  hasMore={hasMoreConversations}
-                />
-              </div>
-            </div>
-
-            {/* Account Section */}
-            <div className="sidebar-section">
-              <h3>Account</h3>
-              <div className="token-logout-container">
-
-                {/* Upgrade Button (for free users) */}
-                {userStatus && !userStatus.isPaidUser && (
-                  <Button 
-                    className="upgrade-btn w-100 mb-2" 
-                    variant="primary"
-                    onClick={() => window.location.href = '/pricing'}
-                    style={{
-                      background: 'linear-gradient(90deg, #19c37d 0%, #10a37f 100%)',
-                      border: 'none',
-                      fontWeight: 500,
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      transition: 'opacity 0.2s ease'
-                    }}
-                    aria-label="Upgrade to Pro"
-                  >
-                    <i className="fas fa-crown me-2" aria-hidden="true"></i>
-                    Upgrade to Pro
-                  </Button>
-                )}
-
-                {/* Logout button */}
-                <Button 
-                  className="logout-btn w-100" 
-                  variant="outline-secondary"
-                  onClick={handleLogout} 
+              {/* Chat History Section */}
+              <div className="sidebar-section">
+                <h3>Chats</h3>
+                <EnhancedButton 
+                  className="w-100 mb-2" 
+                  onClick={() => setShowUsageDashboard(true)}
+                  aria-label="Open usage dashboard"
                   style={{
-                    borderColor: 'rgba(255,255,255,0.2)',
+                    background: '#343541',
+                    border: 'none',
                     color: '#ECECF1',
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    transition: 'background-color 0.2s ease, border-color 0.2s ease'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'background-color 0.2s ease'
                   }}
-                  aria-label="Logout from application"
                 >
-                  <i className="fas fa-sign-out-alt me-2" aria-hidden="true"></i>
-                  Logout
-                </Button>
+                  <i className="fas fa-chart-bar me-2" aria-hidden="true"></i>
+                  <span>Usage Dashboard</span>
+                </EnhancedButton>
+                
+                <div className="chat-list-scroll">
+                  <VirtualizedConversationList 
+                    items={conversations}
+                    onClickItem={handleConversationClick}
+                    onDeleteItem={handleDeleteConversation}
+                    contextMenu={contextMenu}
+                    handleContextMenu={handleContextMenu}
+                    loadMore={loadMoreConversations}
+                    hasMore={hasMoreConversations}
+                  />
+                </div>
+              </div>
+
+              {/* Account Section */}
+              <div className="sidebar-section">
+                <h3>Account</h3>
+                <div className="token-logout-container">
+
+                  {/* Upgrade Button (for free users) */}
+                  {userStatus && !userStatus.isPaidUser && (
+                    <Button 
+                      className="upgrade-btn w-100 mb-2" 
+                      variant="primary"
+                      onClick={() => window.location.href = '/pricing'}
+                      style={{
+                        background: 'linear-gradient(90deg, #19c37d 0%, #10a37f 100%)',
+                        border: 'none',
+                        fontWeight: 500,
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        transition: 'opacity 0.2s ease'
+                      }}
+                      aria-label="Upgrade to Pro"
+                    >
+                      <i className="fas fa-crown me-2" aria-hidden="true"></i>
+                      Upgrade to Pro
+                    </Button>
+                  )}
+
+                  {/* Memories button (moved from header) */}
+                  <Button 
+                    className="memories-btn w-100 mb-2" 
+                    variant="outline-secondary"
+                    onClick={handleShowMemory}
+                    style={{
+                      borderColor: 'rgba(255,255,255,0.2)',
+                      color: '#ECECF1',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      transition: 'background-color 0.2s ease, border-color 0.2s ease'
+                    }}
+                    aria-label="Open Memories"
+                  >
+                    <i className="fas fa-brain me-2" aria-hidden="true"></i>
+                    Memories
+                  </Button>
+
+                  {/* Logout button */}
+                  <Button 
+                    className="logout-btn w-100" 
+                    variant="outline-secondary"
+                    onClick={handleLogout} 
+                    style={{
+                      borderColor: 'rgba(255,255,255,0.2)',
+                      color: '#ECECF1',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      transition: 'background-color 0.2s ease, border-color 0.2s ease'
+                    }}
+                    aria-label="Logout from application"
+                  >
+                    <i className="fas fa-sign-out-alt me-2" aria-hidden="true"></i>
+                    Logout
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
 
           <div className="container d-flex flex-column vh-100 flex-grow-1 overflow-auto">
           <div 
@@ -1487,21 +1627,23 @@ const App = () => {
                   Pricing & Upgrade
                 </Button>
               </Link>
-              <Button 
-                variant="secondary" 
-                className="modern-button" 
-                style={{ 
-                  fontSize: 16, 
-                  height: 40, 
-                  borderRadius: 8,
-                  backgroundColor: '#6c757d',
-                  borderColor: '#6c757d',
-                  color: 'white'
-                }}
-                onClick={() => setShowAdminPanel(true)}
-              >
-                Admin Panel
-              </Button>
+              {userStatus && String(userStatus.planStatus || '').toLowerCase() === 'enterprise' && (
+                <Button 
+                  variant="secondary" 
+                  className="modern-button" 
+                  style={{ 
+                    fontSize: 16, 
+                    height: 40, 
+                    borderRadius: 8,
+                    backgroundColor: '#6c757d',
+                    borderColor: '#6c757d',
+                    color: 'white'
+                  }}
+                  onClick={() => setShowAdminPanel(true)}
+                >
+                  Admin Panel
+                </Button>
+              )}
               <button className="theme-toggle-button" onClick={toggleTheme} style={{ height: 40, width: 40, borderRadius: 8, background: '#23272f', color: '#fff', border: 'none', marginLeft: 8 }} aria-label="Toggle theme">
                 {theme === 'dark' ? <i className="fas fa-sun"></i> : <i className="fas fa-moon"></i>}
               </button>
@@ -1553,6 +1695,11 @@ const App = () => {
                           No messages yet. Start the conversation!
                         </div>
                       )}
+                      {isSending && (
+                        <div style={{ padding: '8px 12px' }}>
+                          <TypingEffect text="" isTyping={false} showDots={true} />
+                        </div>
+                      )}
                     </div>
                     {/* Always scroll to bottom */}
                     <div ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth' }); }} />
@@ -1574,6 +1721,8 @@ const App = () => {
                   handleToggleRecording={handleToggleRecording}
                   isRecording={isRecording}
                   fileInputRef={fileInputRef}
+                  mode={mode}
+                  modePrompts={MODE_PROMPTS}
                 />
               </>
             } />

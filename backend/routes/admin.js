@@ -24,14 +24,13 @@ const requireAdmin = async (req, res, next) => {
       });
     }
     
-    // For development: allow any authenticated user to access admin panel
-    // In production, you should check for specific admin roles or planStatus
-    // if (user.planStatus !== 'enterprise') {
-    //   return res.status(403).json({
-    //     status: 'error',
-    //     message: 'Access denied. Admin privileges required.'
-    //   });
-    // }
+    // Enforce enterprise plan for admin access
+    if (user.planStatus !== 'enterprise') {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Access denied. Admin privileges required (enterprise plan).'
+      });
+    }
     
     next();
   } catch (error) {
@@ -43,8 +42,9 @@ const requireAdmin = async (req, res, next) => {
   }
 };
 
-// Apply admin middleware to all routes (temporarily simplified for development)
-router.use(auth); // Only require authentication, not admin privileges for now
+// Apply admin middleware to all routes
+router.use(auth);
+router.use(requireAdmin);
 
 // =====================================================
 // SYSTEM STATS
