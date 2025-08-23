@@ -355,6 +355,9 @@ chatLimiter = chatLimiter || rateLimit({
 // API Endpoints
 const authRoutes = require('./routes/auth');
 app.use('/api/v1/auth', authLimiter, authRoutes.default);
+// Memory routes (GET/POST)
+const memoryRoutes = require('./routes/memory');
+app.use('/api/v1/memory', memoryRoutes);
 // Expose 2FA management endpoints
 app.post('/api/v1/auth/2fa/setup', auth, authRoutes.setup2FA);
 app.post('/api/v1/auth/2fa/verify-setup', auth, authRoutes.verify2FASetup);
@@ -481,24 +484,55 @@ app.post(
   logger.info({ action: 'chat_request', userId, conversationId: initialConversationId, message, model: selectedModel });
 
   async function shouldRemember(message) {
-    // 2. AI judgment call
+    // Heuristic explicit checks first
+    const lower = (message || '').toLowerCase();
+    const isExplicit = /\b(remember|save this|store this|keep this)\b/.test(lower);
+    if (isExplicit) return { should: true, isExplicit: true };
+
+    // If TogetherAI is unavailable, use lightweight heuristics
+    if (!together) {
+      const heuristics = [
+        /\bmy name is\b/i,
+        /\bcall me\b/i,
+        /\bemail\b[:\s]/i,
+        /\bphone\b[:\s]/i,
+        /\b(i|we)\s+prefer\b/i,
+        /\btimezone\b|\btime zone\b/i,
+        /\bbirthday\b|\bdob\b/i
+      ];
+      const should = heuristics.some(rx => rx.test(message));
+      return { should, isExplicit: false };
+    }
+
+    // AI judgment call via TogetherAI
     try {
       const judgmentPrompt = `Does the following message contain a useful fact worth remembering for future conversations? Answer with only YES or NO. Message: "${message}"`;
-              const response = await withTimeout(
+      const response = await withTimeout(
         together.chat.completions.create({
-      model: "mistralai/Mixtral-8x7B-Instruct-v0.1", // Always use Mixtral for memory judgment
-        messages: [{ role: "user", content: judgmentPrompt }],
-        max_tokens: 2,
+          model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+          messages: [{ role: "user", content: judgmentPrompt }],
+          max_tokens: 2,
         }),
-          10000,
-          'The AI took too long to decide if this should be remembered.',
-          'Memory Judgment'
-        );
+        10000,
+        'The AI took too long to decide if this should be remembered.',
+        'Memory Judgment'
+      );
       const decision = response.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim().toUpperCase();
       return { should: decision === "YES", isExplicit: false };
     } catch (error) {
-        logger.error({ action: 'llm_memory_judgment', userId: req.user.id, error: error.message, isTimeout: error.isTimeout });
-      return { should: false, isExplicit: false }; // Default to not remembering on error
+      logger.error({ action: 'llm_memory_judgment', userId: req.user.id, error: error.message, isTimeout: error.isTimeout });
+      // Fall back to heuristics on error
+      const heuristics = [
+        /\bmy name is\b/i,
+        /\bcall me\b/i,
+        /\bemail\b[:\s]/i,
+        /\bphone\b[:\s]/i,
+        /\b(i|we)\s+prefer\b/i,
+        /\btimezone\b|\btime zone\b/i,
+        /\bbirthday\b|\bdob\b/i
+      ];
+      const should = heuristics.some(rx => rx.test(message));
+      return { should, isExplicit: false };
     }
   };
 
@@ -697,13 +731,13 @@ app.post(
           return;
       }
       // If it was an implicit "remember", we still need to get a proper chat response.
-      // We'll prepend the confirmation to the main response later.
+      // We'll prepend a subtle confirmation before streaming begins.
     }
 
     // --- AI Stream Generation ---
     const systemMessage = {
       role: "system",
-      content: "You are a helpful AI assistant. When responding to user queries, only provide the final answer without showing your internal reasoning or thought process. Do not prefix your responses with any indicators like 'Answer:' or 'Response:'. Just provide the direct answer to the user's query."
+      content: "You are a helpful AI assistant. Use any provided 'memory' context to personalize responses. Do not claim you lack memory; if the user shares a fact to remember, acknowledge it briefly (e.g., 'Noted') and use it later. Provide direct answers without exposing internal reasoning. Avoid prefacing with 'Answer:' or 'Response:'."
     };
     
     // Get conversation history
@@ -712,8 +746,42 @@ app.post(
       ...(msg.bot ? [{ role: "assistant", content: msg.bot }] : [])
     ]);
     
-    // Combine system message with conversation history and current message
-    const messagesForAI = [systemMessage, ...conversationHistory, { role: "user", content: userMessage }];
+    // Parse optional memory hints coming from the frontend (stringified JSON array)
+    let memoryHints = [];
+    try {
+      if (req.body.memoryHints) {
+        const parsed = JSON.parse(req.body.memoryHints);
+        if (Array.isArray(parsed)) memoryHints = parsed.filter(Boolean).slice(0, 8);
+      }
+    } catch (_) {}
+
+    // Fallback: if no hints provided, pull a few recent memories from DB/cache
+    if (memoryHints.length === 0) {
+      try {
+        const cacheKey = `memory:${req.user.id}`;
+        const cached = await cache.get(cacheKey);
+        const mems = cached || (await Memory.findAll({
+          where: { userId: req.user.id, [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] },
+          order: [['timestamp', 'DESC']],
+          limit: 5,
+        }));
+        if (!cached) await cache.set(cacheKey, mems, 30);
+        memoryHints = (mems || []).map(m => m.text).filter(Boolean);
+      } catch (_) {}
+    }
+
+    // Build a memory context system message if hints provided
+    const memorySystemMsg = memoryHints.length
+      ? { role: "system", content: `Relevant user memory (use respectfully and privately, do not ask the user to repeat):\n- ${memoryHints.join("\n- ")}` }
+      : null;
+
+    // Combine system message with optional memory hints, conversation history and current message
+    const messagesForAI = [
+      systemMessage,
+      ...(memorySystemMsg ? [memorySystemMsg] : []),
+      ...conversationHistory,
+      { role: "user", content: userMessage }
+    ];
 
     // Create provider stream BEFORE sending SSE headers so we can return JSON on error
     let stream;
@@ -747,6 +815,12 @@ app.post(
       }
     }, 15000);
     try {
+      // If we saved memory implicitly earlier, send a subtle confirmation prefix
+      if (memoryCheck.should && !memoryCheck.isExplicit) {
+        const prefix = `(Noted) `;
+        botResponseText += prefix;
+        try { res.write(`data: ${JSON.stringify({ chunk: prefix })}\n\n`); } catch(_) {}
+      }
       for await (const chunk of stream) {
         if (clientClosed) break;
         const content = chunk.choices[0]?.delta?.content || '';

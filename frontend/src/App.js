@@ -459,6 +459,8 @@ const App = () => {
   const [memory, setMemory] = useState([]);
   const [editingMemory, setEditingMemory] = useState(null);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
+  // helper input state for future manual add, not exposed as a button
+  const [newMemoryText, setNewMemoryText] = useState("");
   const [searchTerm, setSearchTerm] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
@@ -469,6 +471,66 @@ const App = () => {
   const [supportedFormats, setSupportedFormats] = useState([]);
   const [selectedModel, setSelectedModel] = useState('gpt-4.1-nano');
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+
+  // --- Memory helpers (inside App scope) ---
+  const createMemory = async (text) => {
+    const payload = (text || "").trim();
+    if (!payload) return;
+    try {
+      const response = await axios.post('http://localhost:5000/api/v1/memory', { text: payload }, {
+        headers: { 'x-auth-token': localStorage.getItem('token') }
+      });
+      setMemory((prev) => [response.data, ...prev]);
+    } catch (error) {
+      // Silent fail to avoid interrupting chat flow
+      console.warn('createMemory failed', error?.response?.status || '', error?.message || error);
+    }
+  };
+
+  // Extract memory-worthy snippet from arbitrary text
+  const extractMemoryCandidate = (raw) => {
+    const text = (raw || "").toString();
+    if (!text) return null;
+    // Patterns: introductions, roles, email/phone, preferences, timezone
+    const rules = [
+      /\bmy name is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
+      /\bcall me\s+([A-Z][a-z]{2,})/i,
+      /\bi am\s+(?:a?n?\s+)?(student|developer|engineer|designer|trader|doctor|lawyer|manager|analyst|founder)\b/i,
+      /\bemail\b[:\s]*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i,
+      /\bphone\b[:\s]*([+\d][\d\s\-]{6,})/i,
+      /\b(my|our)\s+(timezone|time zone)\s+is\s+([^\.\n]{3,80})/i,
+      /\b(i|we)\s+prefer\s+([^\.\n]{3,120})/i,
+      /\b(birthday|dob)\s*[:\-]\s*([^\n]{3,40})/i,
+    ];
+    for (const r of rules) {
+      const m = text.match(r);
+      if (m && m[0]) {
+        const snippet = m[0].trim();
+        return snippet.length > 200 ? snippet.slice(0, 197) + '…' : snippet;
+      }
+    }
+    return null;
+  };
+
+  // Select relevant memory lines for a given query (very lightweight)
+  const selectRelevantMemories = (query, maxItems = 5) => {
+    const q = (query || '').toLowerCase();
+    if (!q || !Array.isArray(memory) || memory.length === 0) return [];
+    const scored = memory.map(m => {
+      const t = (m.text || '').toLowerCase();
+      // simple overlap score
+      let score = 0;
+      if (!t) return { m, score };
+      const keywords = q.split(/[^a-z0-9+#]+/).filter(Boolean);
+      for (const k of keywords) if (t.includes(k)) score++;
+      return { m, score };
+    });
+    return scored
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxItems)
+      .map(s => s.m.text);
+  };
   const [error, setError] = useState(null);
   const [showUsageDashboard, setShowUsageDashboard] = useState(false);
   const [showNotification, setShowNotification] = useState(true);
@@ -1157,6 +1219,24 @@ const App = () => {
     if (currentConversation.id) {
       formData.append('conversationId', currentConversation.id);
     }
+    // Auto recall: include relevant memory snippets for server-side use if supported
+    try {
+      if (memory.length === 0) {
+        // lazily fetch if empty
+        const memResp = await axios.get('http://localhost:5000/api/v1/memory', { headers: { 'x-auth-token': localStorage.getItem('token') } });
+        setMemory(memResp.data || []);
+      }
+    } catch (e) { /* ignore */ }
+    const hints = selectRelevantMemories(userQuery, 5);
+    if (hints.length) {
+      formData.append('memoryHints', JSON.stringify(hints));
+    }
+
+    // Auto-save: attempt to store memory-worthy info from the user's message
+    const userCandidate = extractMemoryCandidate(userQuery);
+    if (userCandidate) {
+      createMemory(userCandidate);
+    }
 
     try {
       const response = await fetch(`http://localhost:5000/api/v1/chat?model=${selectedModel}`, {
@@ -1207,6 +1287,7 @@ const App = () => {
                   messages: prev.messages.map(msg => {
                     if (msg.id === botMessagePlaceholder.id) {
                       const newBot = (msg.bot || '') + data.chunk;
+                      latestBotText = newBot;
                       return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
                     }
                     return msg;
@@ -1245,6 +1326,7 @@ const App = () => {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let conversationId = currentConversation.id;
+      let latestBotText = '';
 
       let done = false;
       while (!done) {
@@ -1299,6 +1381,12 @@ const App = () => {
           msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg
         )
       }));
+
+      // After finalizing, auto-save any memory-worthy info from the assistant reply
+      const botCandidate = extractMemoryCandidate(latestBotText);
+      if (botCandidate) {
+        createMemory(botCandidate);
+      }
 
       setSelectedFile(null);
       fetchUserStatus();
