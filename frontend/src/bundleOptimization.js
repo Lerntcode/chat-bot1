@@ -42,7 +42,7 @@ export const measurePerformance = () => {
     // Measure bundle size impact
     window.addEventListener('load', () => {
       const navigation = performance.getEntriesByType('navigation')[0];
-      if (navigation) {
+      if (navigation && navigation.loadEventEnd > navigation.fetchStart) {
         console.log('Page Load Time:', navigation.loadEventEnd - navigation.fetchStart);
         console.log('DOM Content Loaded:', navigation.domContentLoadedEventEnd - navigation.fetchStart);
       }

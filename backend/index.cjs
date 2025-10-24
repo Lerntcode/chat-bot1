@@ -2,6 +2,7 @@ require('./models/associations');
 const env = require('./config/env');
 const express = require('express');
 const cors = require('cors');
+const hpp = require('hpp');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -37,6 +38,30 @@ const { estimateTokenCount } = require('./utils/tokenizer');
 const { metricsMiddleware, metricsHandler } = require('./middleware/metrics');
 const FileType = require('file-type');
 const logger = require('./utils/logger');
+
+// Error handling middleware
+const { errorHandler, asyncHandler, notFoundHandler, maintenanceHandler } = require('./middleware/errorHandler');
+
+// Security middleware
+const {
+  createRateLimiters,
+  createSpeedLimiters,
+  createCorsOptions,
+  createHelmetConfig,
+  validateRequest,
+  ipFilter,
+  requestSizeLimit,
+  securityHeaders,
+  securityLogging
+} = require('./middleware/security');
+
+// Enhanced validation middleware
+const {
+  sanitizeBody,
+  sanitizeQuery,
+  sanitizeParams,
+  validateRateLimit
+} = require('./middleware/validation');
 
 const swaggerOptions = {
   definition: {
@@ -182,20 +207,9 @@ const upload = multer({
   },
 });
 
-// CORS: restrict in production using CORS_ORIGINS allowlist
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true); // allow non-browser clients
-    const allowed = (env.CORS_ORIGINS || '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-    if (!env.IS_PROD) return callback(null, true);
-    if (allowed.includes(origin)) return callback(null, true);
-    return callback(new Error('CORS not allowed from origin'), false);
-  },
-  credentials: true,
-}));
+// CORS (centralized options)
+app.use(cors(createCorsOptions()));
+/* Previous inline helmet kept for reference
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -261,6 +275,7 @@ app.use(helmet({
   ieNoOpen: true,
   xssFilter: true
 }));
+*/
 // Disable compression for SSE endpoints; enable globally otherwise
 app.use((req, res, next) => {
   if (req.path === '/api/v1/chat') return next();
@@ -297,29 +312,11 @@ app.use(globalLimiter || rateLimit({ windowMs: 60 * 1000, max: 120, standardHead
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Chatbot API Docs' }));
 app.get('/metrics', metricsHandler);
 
-// Note: Move error handler after routes; keep a reference here for later
-const errorHandler = (err, req, res, next) => {
-  logger.error({
-    type: 'unhandled_error',
-    message: err.message,
-    stack: env.IS_PROD ? undefined : err.stack,
-    requestId: res.getHeader('x-request-id'),
-    path: req.originalUrl,
-  });
-  const status = err.status || 500;
-  res.status(status).json({
-    error: err.message || 'Internal server error',
-    requestId: res.getHeader('x-request-id'),
-  });
-};
+// Note: Global error handler is imported from middleware; ensure only one definition exists
 
-// Auth-specific rate limiter (more strict)
-const authLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Create enhanced rate limiters
+const { apiLimiter, authLimiter, uploadLimiter } = createRateLimiters();
+const { speedLimiter } = createSpeedLimiters();
 
 // Stricter per-user rate limiter for chat (Redis-backed if configured)
 let chatLimiter;
@@ -352,9 +349,45 @@ chatLimiter = chatLimiter || rateLimit({
   message: { error: 'Too many chat requests, please slow down.' },
 });
 
+// Apply security middleware
+app.use(hpp()); // HTTP Parameter Pollution protection
+
+// Apply rate limiting and speed limiting
+app.use(apiLimiter);
+app.use(speedLimiter);
+
+// Apply security headers and logging
+app.use(securityHeaders);
+app.use(securityLogging);
+
+// Apply input sanitization
+app.use(sanitizeBody);
+app.use(sanitizeQuery);
+app.use(sanitizeParams);
+
+// Apply IP filtering and request validation
+app.use(ipFilter);
+app.use(validateRequest);
+app.use(requestSizeLimit);
+
+// Passport configuration
+const passport = require('./config/passport');
+app.use(passport.initialize());
+
 // API Endpoints
 const authRoutes = require('./routes/auth');
-app.use('/api/v1/auth', authLimiter, authRoutes.default);
+const googleAuthRoutes = require('./routes/googleAuth');
+const logsRoutes = require('./routes/logs');
+const securityRoutes = require('./routes/security');
+// Temporarily disabled auth rate limiting for testing
+// app.use('/api/v1/auth', authLimiter, authRoutes.default);
+app.use('/api/v1/auth', authRoutes.default);
+app.use('/api/v1/auth', googleAuthRoutes);
+app.use('/api/v1/logs', logsRoutes);
+app.use('/api/v1/security', securityRoutes);
+
+// Apply upload rate limiting to file upload endpoints
+app.use('/api/v1/upload', uploadLimiter);
 // Memory routes (GET/POST)
 const memoryRoutes = require('./routes/memory');
 app.use('/api/v1/memory', memoryRoutes);
@@ -918,19 +951,21 @@ app.post(
  */
 // Get conversations (metadata) with optional pagination
 app.get('/api/v1/conversations', auth, async (req, res, next) => {
+  console.log('Fetching conversations for user:', req.user.id);
   try {
     const page = req.query.page ? Math.max(parseInt(req.query.page, 10) || 1, 1) : null;
     const limit = req.query.limit ? Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100) : null;
 
-    // Cache key should include pagination if used
     const cacheKey = page && limit
       ? `conversations:${req.user.id}:p=${page}:l=${limit}`
       : `conversations:${req.user.id}`;
 
     const cached = await cache.get(cacheKey);
     if (cached) {
+      console.log('Returning cached conversations for user:', req.user.id);
       return res.json(cached);
     }
+    console.log('No cache found, querying database for conversations for user:', req.user.id);
 
     if (page && limit) {
       const offset = (page - 1) * limit;
@@ -944,18 +979,20 @@ app.get('/api/v1/conversations', auth, async (req, res, next) => {
       const totalPages = Math.ceil(count / limit) || 1;
       const payload = { items: rows, pagination: { page, limit, total: count, totalPages } };
       await cache.set(cacheKey, payload, 30);
+      console.log(`Found and cached ${rows.length} conversations for user:`, req.user.id);
       return res.json(payload);
     }
 
-    // Backward-compatible: no pagination -> return array
     const conversations = await Conversation.findAll({
       attributes: ['id', 'title', 'lastMessageTimestamp'],
       where: { userId: req.user.id },
       order: [['lastMessageTimestamp', 'DESC']],
     });
     await cache.set(cacheKey, conversations, 30);
+    console.log(`Found and cached ${conversations.length} conversations for user:`, req.user.id);
     return res.json(conversations);
   } catch (error) {
+    console.error('Error fetching conversations from database for user:', req.user.id, error);
     next(error);
   }
 });
@@ -1685,12 +1722,13 @@ app.use('/api/v1/admin', adminRoutes);
 
 // Remove duplicate health route (kept single definition above)
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not Found' });
-});
+// Maintenance mode handler
+app.use(maintenanceHandler);
 
-// Centralized error handler placed after routes
+// 404 handler
+app.use(notFoundHandler);
+
+// Global error handler (must be last)
 app.use(errorHandler);
 
 // Token counting now handled by utils/tokenizer

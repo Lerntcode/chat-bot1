@@ -40,6 +40,10 @@
   --chat-input-bg: #1E1E1E;
   --chat-text: #F3F4F6;
   --chat-user-text: #ffffff;
+  --chatgpt-bg: #121212;
+  --chatgpt-text: #F3F4F6;
+  --chatgpt-user-bubble: #2563EB;
+  --chatgpt-bot-bubble: #374151;
   --shadow-light: rgba(0, 0, 0, 0.1);
   --shadow-medium: rgba(0, 0, 0, 0.2);
   --shadow-heavy: rgba(0, 0, 0, 0.3);
@@ -71,6 +75,10 @@ body.light-theme {
   --chat-input-bg: #FFFFFF;
   --chat-text: #111827;
   --chat-user-text: #111827;
+  --chatgpt-bg: #F9FAFB;
+  --chatgpt-text: #111827;
+  --chatgpt-user-bubble: #DBEAFE;
+  --chatgpt-bot-bubble: #E5E7EB;
   --shadow-light: rgba(0, 0, 0, 0.05);
   --shadow-medium: rgba(0, 0, 0, 0.1);
   --shadow-heavy: rgba(0, 0, 0, 0.15);
@@ -97,6 +105,8 @@ body, .container.d-flex.flex-column.vh-100.flex-grow-1.overflow-auto {
   box-shadow: none !important;
   height: 100vh !important;
   min-height: 100vh !important;
+  position: relative;
+  overflow: hidden;
 }
 
 /* ChatGPT-like Thinking Animation */
@@ -229,12 +239,38 @@ body, .container.d-flex.flex-column.vh-100.flex-grow-1.overflow-auto {
 .sidebar .chat-list-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 320px);
   margin-bottom: 16px;
   scroll-behavior: smooth;
   padding-right: 4px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  position: relative;
+}
+
+.conversation-list-container {
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.conversation-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.conversation-list-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.conversation-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.conversation-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.25);
 }
 
 /* Custom scrollbar for WebKit browsers */
@@ -510,20 +546,14 @@ body, .container.d-flex.flex-column.vh-100.flex-grow-1.overflow-auto {
 
 .user-message-actions,
 .bot-message-actions {
-  opacity: 0;
-  visibility: hidden;
+  opacity: 1;
+  visibility: visible;
   transition: opacity 0.2s ease, visibility 0.2s ease;
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
-}
-
-.user-message:hover .user-message-actions,
-.assistant-message:hover .bot-message-actions {
-  opacity: 1;
-  visibility: visible;
 }
 
 .user-message-actions {
@@ -666,6 +696,35 @@ body, .container.d-flex.flex-column.vh-100.flex-grow-1.overflow-auto {
   z-index: 1001; /* Ensure it's above other elements */
   min-width: 100px; /* Adjust as needed */
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.container_chat_bot {
+  position: fixed;
+  bottom: 0;
+  left: 260px; /* Account for sidebar width */
+  right: 0;
+  z-index: 100;
+  background: var(--chat-bg);
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  transition: left 0.3s ease;
+}
+
+/* When sidebar is closed on desktop */
+@media (min-width: 641px) {
+  .d-flex .sidebar.closed ~ .container .container_chat_bot,
+  .d-flex:has(.sidebar.closed) .container_chat_bot {
+    left: 0;
+  }
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .container_chat_bot {
+    left: 0;
+    padding: 12px;
+  }
 }
 
 .container_chat_bot .container-chat-options .chat {
@@ -1332,20 +1391,51 @@ body.light-theme {
 }
 
 /* ================================ */
-/* Message bubbles with outlines    */
+/* Modern Gradient Card Messages    */
 /* ================================ */
+.user-message.style-gradient,
+.assistant-message.style-gradient {
+  position: relative;
+  max-width: 85%;
+  margin-bottom: 16px;
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-message.style-gradient {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%);
+  border-left: 4px solid #6366f1;
+  margin-left: auto;
+}
+
+.assistant-message.style-gradient {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%);
+  border-left: 4px solid #22c55e;
+}
+
+.user-message.style-gradient:hover,
+.assistant-message.style-gradient:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Default styling (fallback) */
 .user-message,
 .assistant-message {
   position: relative;
   max-width: 92%;
-  border: 1px solid var(--border-soft);            /* tokenized soft border */
-  outline: none;                                   /* remove harsh outer ring */
+  border: 1px solid var(--border-soft);
+  outline: none;
   box-shadow: var(--shadow-inset), var(--shadow-ambient);
   transition: background-color 140ms ease, border-color 140ms ease, box-shadow 200ms ease;
 }
 
 .user-message {
-  background: var(--chat-bot-bubble); /* match bot message color as requested */
+  background: var(--chat-bot-bubble);
   color: var(--chat-text);
   border-radius: var(--radius-bubble);
   border-color: var(--border-soft-strong);
@@ -1358,10 +1448,9 @@ body.light-theme {
   border-color: var(--border-soft-strong);
 }
 
-/* Subtle hover emphasis */
 .user-message:hover {
   border-color: var(--border-soft-strong);
-  background: rgba(255,255,255,0.02); /* subtle lift while staying matched */
+  background: rgba(255,255,255,0.02);
   box-shadow: var(--shadow-inset), var(--shadow-ambient-hover);
 }
 
@@ -2114,6 +2203,7 @@ body.light-theme {
   text-align: center;
   padding: 10px;
   margin-top: 10px;
+  margin-bottom: 200px; /* Add space for fixed input */
 }
 
 /* --- Enhanced ChatGPT-like UI Polish (Reverted to improved state) --- */
@@ -2121,9 +2211,11 @@ body.light-theme {
 /* 1. Subtle gradient background for chat window */
 .chat-window {
   background: var(--chat-bg);
-  padding: 24px 0 24px 0;
+  padding: 24px 24px 200px 24px; /* Add bottom padding for fixed input */
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  overflow-y: auto;
+  height: calc(100vh - 56px); /* Account for header height */
 }
 
 /* 2. Modern, readable font for chat bubbles */

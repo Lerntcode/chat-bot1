@@ -5,6 +5,7 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { BrowserRouter } from 'react-router-dom';
+import { NotificationProvider, setNotificationContext } from './components/NotificationSystem';
 // Basic CSP for frontend as defense-in-depth when served statically
 const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; connect-src 'self' http://localhost:5000";
 const meta = document.createElement('meta');
@@ -13,13 +14,28 @@ meta.content = csp;
 document.head.appendChild(meta);
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
+
+// Create notification context reference
+let notificationContextRef = null;
+
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
-    <App />
-    </BrowserRouter>
+    <NotificationProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </NotificationProvider>
   </React.StrictMode>
 );
+
+// Set up global notification function
+window.showNotification = (notification) => {
+  if (notificationContextRef) {
+    return notificationContextRef.addNotification(notification);
+  }
+  console.log(`[${notification.type || 'info'}] ${notification.title || ''}: ${notification.message}`);
+  return null;
+};
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))

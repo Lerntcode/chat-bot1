@@ -17,7 +17,7 @@ const User = sequelize.define('User', {
   },
   password: {
     type: DataTypes.STRING(255),
-    allowNull: false,
+    allowNull: true, // Allow null for OAuth users
   },
   name: {
     type: DataTypes.STRING(100),
@@ -26,6 +26,11 @@ const User = sequelize.define('User', {
   planStatus: {
     type: DataTypes.ENUM('free', 'pro', 'enterprise'),
     defaultValue: 'free',
+  },
+  googleId: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    unique: true,
   },
   oauthProvider: {
     type: DataTypes.ENUM('google', 'github'),
@@ -40,6 +45,10 @@ const User = sequelize.define('User', {
     defaultValue: false,
   },
   paidUntil: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  lastLogin: {
     type: DataTypes.DATE,
     allowNull: true,
   },
@@ -92,6 +101,9 @@ const User = sequelize.define('User', {
   indexes: [
     {
       fields: ['email']
+    },
+    {
+      fields: ['googleId']
     },
     {
       fields: ['planStatus']

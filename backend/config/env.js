@@ -19,6 +19,15 @@ const IS_PROD = NODE_ENV === 'production';
 
 const CORS_ORIGINS = process.env.CORS_ORIGINS || (IS_PROD ? '' : 'http://localhost:3000');
 
+// Security Configuration
+const BLOCKED_IPS = process.env.BLOCKED_IPS || '';
+const SECURITY_HEADERS = parseBool(process.env.SECURITY_HEADERS, true);
+const RATE_LIMITING = parseBool(process.env.RATE_LIMITING, true);
+const FILE_SCANNING = parseBool(process.env.FILE_SCANNING, true);
+const SESSION_TIMEOUT = parseNumber(process.env.SESSION_TIMEOUT, 24 * 60 * 60 * 1000); // 24 hours
+const MAX_LOGIN_ATTEMPTS = parseNumber(process.env.MAX_LOGIN_ATTEMPTS, 5);
+const LOGIN_LOCKOUT_DURATION = parseNumber(process.env.LOGIN_LOCKOUT_DURATION, 15 * 60 * 1000); // 15 minutes
+
 const DB_NAME = process.env.DB_NAME || '';
 const DB_USER = process.env.DB_USER || '';
 const DB_PASSWORD = process.env.DB_PASSWORD || '';
@@ -38,6 +47,12 @@ const GEMINI_FLASH_MODEL = process.env.GEMINI_FLASH_MODEL || process.env.gemini_
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const REDIS_URL = process.env.REDIS_URL || '';
+
+// Google OAuth Configuration
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL;
+const FRONTEND_URL = process.env.FRONTEND_URL;
 
 function validateEnv() {
   const missing = [];
@@ -80,4 +95,17 @@ module.exports = {
   GEMINI_FLASH_MODEL,
   JWT_SECRET,
   REDIS_URL,
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  GOOGLE_CALLBACK_URL,
+  FRONTEND_URL,
+  
+  // Security Configuration
+  BLOCKED_IPS,
+  SECURITY_HEADERS,
+  RATE_LIMITING,
+  FILE_SCANNING,
+  SESSION_TIMEOUT,
+  MAX_LOGIN_ATTEMPTS,
+  LOGIN_LOCKOUT_DURATION,
 };

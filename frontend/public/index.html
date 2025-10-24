@@ -10,7 +10,7 @@
       content="Web site created using create-react-app"
     />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" />
     <link href="https://fonts.googleapis.com/css?family=Inter:400,600&display=swap" rel="stylesheet">
     <!--
       manifest.json provides metadata used when your web app is installed on a
@@ -34,8 +34,11 @@
     
     <!-- Theme Readability Test Script (Development Only) -->
     <script>
-      // Theme Readability Test Script
+      // Theme Readability Test Script - Disabled in production
       function testThemeReadability() {
+        // Only run in development mode
+        if (process.env.NODE_ENV !== 'development') return;
+        
         console.log('🎨 Testing Theme Readability...\n');
 
         // Test 1: Check if theme variables are properly defined
@@ -88,10 +91,11 @@
       
       // Auto-run test after page loads (development only)
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        setTimeout(() => {
-          console.log('🔍 Auto-running theme readability test...');
-          testThemeReadability();
-        }, 2000);
+        // Disable auto-run to reduce console spam
+        // setTimeout(() => {
+        //   console.log('🔍 Auto-running theme readability test...');
+        //   testThemeReadability();
+        // }, 2000);
       }
     </script>
     

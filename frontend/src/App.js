@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { FixedSizeList as List } from 'react-window';
 import axios from 'axios';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
@@ -9,12 +8,16 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Auth from './components/Auth';
-import { Route, Routes, Link, BrowserRouter, useNavigate } from 'react-router-dom';
+import { Route, Routes, Link, useNavigate } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import DOMPurify from 'dompurify';
-import { Suspense, lazy } from 'react';
+import { Suspense } from 'react';
 import { preloadRoutes, measurePerformance, optimizeChunkLoading } from './bundleOptimization';
-import { LoadingSpinner, TypingIndicator, EnhancedButton, AnimatedMessage, ChatListSkeleton } from './components/LoadingComponents';
+import { LoadingSpinner, TypingIndicator, EnhancedButton, AnimatedMessage } from './components/LoadingComponents';
+
+// Error handling imports
+import ErrorBoundary from './components/ErrorBoundary';
+import { setupGlobalErrorHandling, parseApiError, showErrorNotification } from './utils/errorHandler';
 
 // Import components directly (temporarily disabled lazy loading)
 import PricingPage from './components/PricingPage';
@@ -42,6 +45,7 @@ function sanitizeContent(content) {
 }
 
 // Returns a human string and parts until next local midnight or a provided timestamp
+// eslint-disable-next-line no-unused-vars
 function getTimeUntilReset(nextResetAt) {
   const now = new Date();
   const target = nextResetAt ? new Date(nextResetAt) : new Date(now);
@@ -93,7 +97,7 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
     if (ref.current && !isTyping) {
       ref.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, []);
+  }, [isTyping]);
 
   // If showing dots (bot thinking), show dots animation
   if (showDots) {
@@ -128,21 +132,7 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   );
 };
 
-// Lightweight live countdown display
-const ResetCountdown = ({ nextResetAt = null }) => {
-  const [label, setLabel] = useState(getTimeUntilReset(nextResetAt).label);
-  useEffect(() => {
-    const id = setInterval(() => {
-      setLabel(getTimeUntilReset(nextResetAt).label);
-    }, 1000);
-    return () => clearInterval(id);
-  }, [nextResetAt]);
-  return (
-    <span style={{ color: '#9ca3af', fontSize: 12 }} aria-label="Usage resets in">
-      Reset in {label}
-    </span>
-  );
-};
+
 
 const CodeBlock = ({ node, inline, className, children, ...props }) => {
   const match = /language-(\w+)/.exec(className || '');
@@ -204,8 +194,13 @@ const NotificationBanner = ({ warnings, onClose }) => {
 };
 
 // Define ChatInput above App (custom styled input box)
-const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessage, selectedFile, setSelectedFile, supportedFormats, handlePlusClick, handleFileChange, handleToggleRecording, isRecording, fileInputRef, mode, modePrompts }) => (
-  <div className="container_chat_bot" role="form" aria-label="Chat input">
+const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessage, selectedFile, setSelectedFile, supportedFormats, handlePlusClick, handleFileChange, handleToggleRecording, isRecording, fileInputRef, mode, modePrompts, sidebarOpen, isMobile }) => {
+  const inputStyle = {
+    left: isMobile ? '0' : (sidebarOpen ? '260px' : '0')
+  };
+
+  return (
+  <div className="container_chat_bot" role="form" aria-label="Chat input" style={inputStyle}>
     <div className="container-chat-options">
       <div className="chat">
         <div className="chat-bot">
@@ -292,7 +287,8 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
       accept={supportedFormats.map(format => `.${format}`).join(',')}
     />
   </div>
-));
+  );
+});
 
 // Move ChatMessage above App
   const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation, editingMessageId, editingText, setEditingText, startEditMessage, saveEditResend, cancelEdit, onToggleReaction }) => (
@@ -300,7 +296,7 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
       {/* User Message */}
       {(chat.user || chat.isUserMessage) && (
         <div className="d-flex justify-content-end mb-3">
-          <div className="user-message p-3 rounded" role="article" aria-label="User message" tabIndex={0}>
+          <div className="user-message p-3 rounded style-gradient" role="article" aria-label="User message" tabIndex={0}>
             {chat.tokenMeter && (
               <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'right' }}>
                 ≈ {chat.tokenMeter.total || 0} tok
@@ -375,7 +371,7 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
       {/* Assistant Message */}
       {(chat.bot || chat.isTyping) && (
         <div className="d-flex justify-content-start mb-3">
-          <div className="assistant-message p-3 rounded" role="article" aria-label="Assistant message" tabIndex={0}>
+          <div className="assistant-message p-3 rounded style-gradient" role="article" aria-label="Assistant message" tabIndex={0}>
             {chat.tokenMeter && (
               <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8 }}>
                 <span>
@@ -451,6 +447,10 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
 
 
 const App = () => {
+  // Setup global error handling
+  useEffect(() => {
+    setupGlobalErrorHandling();
+  }, []);
   // === 1. All hooks at the very top ===
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -459,8 +459,7 @@ const App = () => {
   const [memory, setMemory] = useState([]);
   const [editingMemory, setEditingMemory] = useState(null);
   const [showMemoryModal, setShowMemoryModal] = useState(false);
-  // helper input state for future manual add, not exposed as a button
-  const [newMemoryText, setNewMemoryText] = useState("");
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
@@ -497,10 +496,10 @@ const App = () => {
       /\bcall me\s+([A-Z][a-z]{2,})/i,
       /\bi am\s+(?:a?n?\s+)?(student|developer|engineer|designer|trader|doctor|lawyer|manager|analyst|founder)\b/i,
       /\bemail\b[:\s]*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i,
-      /\bphone\b[:\s]*([+\d][\d\s\-]{6,})/i,
-      /\b(my|our)\s+(timezone|time zone)\s+is\s+([^\.\n]{3,80})/i,
-      /\b(i|we)\s+prefer\s+([^\.\n]{3,120})/i,
-      /\b(birthday|dob)\s*[:\-]\s*([^\n]{3,40})/i,
+      /\bphone\b[:\s]*([+\d][\d\s-]{6,})/i,
+      /\b(my|our)\s+(timezone|time zone)\s+is\s+([^.\n]{3,80})/i,
+      /\b(i|we)\s+prefer\s+([^.\n]{3,120})/i,
+      /\b(birthday|dob)\s*[:-]\s*([^\n]{3,40})/i,
     ];
     for (const r of rules) {
       const m = text.match(r);
@@ -553,6 +552,7 @@ const App = () => {
   const [convLimit] = useState(20);
   const [hasMoreConversations, setHasMoreConversations] = useState(true);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+
   const navigate = useNavigate();
   const recognition = useMemo(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -640,7 +640,8 @@ const App = () => {
       } else if (error.response && error.response.status === 429) {
         alert('You are being rate limited. Please wait and try again.');
       } else {
-          alert('Error fetching conversations.');
+          console.error('Detailed error fetching conversations:', error);
+          alert('Error fetching conversations. Check the browser console for details.');
       }
       } finally {
         setIsLoadingConversations(false);
@@ -648,6 +649,230 @@ const App = () => {
     };
     fetchConversations();
   }, [isAuthenticated, convPage, convLimit]);
+
+  // Main message sending handler - must be defined before other functions that depend on it
+  const handleSendMessage = useCallback(async (userQuery) => {
+    if ((!userQuery && !selectedFile) || isSending) return;
+
+    const userMessage = {
+      id: Date.now(),
+      user: userQuery,
+      timestamp: new Date().toISOString(),
+      isUserMessage: true,
+      tokenMeter: { total: estimateTokens(userQuery || '') }
+    };
+
+    setMessage('');
+    setIsSending(true);
+
+    // Create a placeholder for the bot's response and add both messages to state
+    const selModelName = (availableModels.find(m => m.id === selectedModel)?.name) || 'AI';
+    const botMessagePlaceholder = {
+      id: Date.now() + 1,
+      bot: '',
+      timestamp: new Date().toISOString(),
+      isTyping: true,
+      modelUsed: selectedModel,
+      metadata: { modelLabel: selModelName },
+      tokenMeter: { total: 0 }
+    };
+
+    setCurrentConversation(prev => ({
+      ...prev,
+      messages: [...(prev.messages || []), userMessage, botMessagePlaceholder]
+    }));
+
+    const formData = new FormData();
+    formData.append('message', userQuery);
+    if (selectedFile) {
+      formData.append('file', selectedFile);
+    }
+    if (currentConversation.id) {
+      formData.append('conversationId', currentConversation.id);
+    }
+    // Auto recall: include relevant memory snippets for server-side use if supported
+    try {
+      if (memory.length === 0) {
+        // lazily fetch if empty
+        const memResp = await axios.get('http://localhost:5000/api/v1/memory', { headers: { 'x-auth-token': localStorage.getItem('token') } });
+        setMemory(memResp.data || []);
+      }
+    } catch (e) { /* ignore */ }
+    const hints = selectRelevantMemories(userQuery, 5);
+    if (hints.length) {
+      formData.append('memoryHints', JSON.stringify(hints));
+    }
+
+    // Auto-save: attempt to store memory-worthy info from the user's message
+    const userCandidate = extractMemoryCandidate(userQuery);
+    if (userCandidate) {
+      createMemory(userCandidate);
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/v1/chat?model=${selectedModel}`, {
+        method: 'POST',
+        headers: {
+          'x-auth-token': localStorage.getItem('token'),
+        },
+        body: formData,
+      });
+
+      // Handle non-2xx responses early
+      if (!response.ok) {
+        let errMsg = `Request failed (${response.status})`;
+        try {
+          const data = await response.json();
+          if (data?.error) errMsg = data.error;
+        } catch (_) {}
+        // Remove messages and surface error
+        setCurrentConversation(prev => ({
+          ...prev,
+          messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== botMessagePlaceholder.id)
+        }));
+        throw new Error(errMsg);
+      }
+
+      const ctype = response.headers.get('content-type') || '';
+      const isSSE = ctype.includes('text/event-stream');
+      if (!isSSE) {
+        // Not labeled as SSE. Try to read text; if it looks like SSE ('data:'), parse it manually.
+        const maybeText = await response.text();
+        if (maybeText.trim().startsWith('data:')) {
+          const lines = maybeText.split('\n\n').filter(Boolean);
+          let conversationId = currentConversation.id;
+          for (const part of lines) {
+            if (!part.startsWith('data: ')) continue;
+            const dataStr = part.substring(6);
+            if (dataStr === '[DONE]') break;
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.conversationId && !conversationId) {
+                conversationId = data.conversationId;
+                setCurrentConversation(prev => ({ ...prev, id: data.conversationId }));
+                setConversations(prev => [...prev, { id: data.conversationId, title: userQuery.substring(0, 30) + '...', lastMessageTimestamp: new Date().toISOString() }]);
+              }
+              if (data.chunk) {
+                setCurrentConversation(prev => {
+                  const updatedMessages = prev.messages.map(msg => {
+                    if (msg.id === botMessagePlaceholder.id) {
+                      const newBot = (msg.bot || '') + data.chunk;
+                      // Update latestBotText outside the map function scope
+                      setTimeout(() => { latestBotText = newBot; }, 0);
+                      return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
+                    }
+                    return msg;
+                  });
+                  return { ...prev, messages: updatedMessages };
+                });
+              }
+              if (data.error) throw new Error(data.error);
+            } catch (e) {
+              console.error('Failed to parse pseudo-SSE data:', dataStr, e);
+            }
+          }
+          // finalize
+          setCurrentConversation(prev => ({
+            ...prev,
+            messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
+          }));
+          return;
+        } else {
+          // True non-stream JSON response
+          try {
+            const data = JSON.parse(maybeText);
+            if (data?.error) throw new Error(data.error);
+          } catch (e) {
+            throw e instanceof Error ? e : new Error('Unexpected non-stream response');
+          }
+          setCurrentConversation(prev => ({
+            ...prev,
+            messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
+          }));
+          return;
+        }
+      }
+
+      if (!response.body) throw new Error("Streaming response not supported.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let conversationId = currentConversation.id;
+      let latestBotText = '';
+
+      let done = false;
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const parts = chunk.split('\n\n').filter(Boolean);
+
+        for (const part of parts) {
+          if (part.startsWith('data: ')) {
+            const dataStr = part.substring(6);
+            if (dataStr === '[DONE]') {
+              done = true;
+              break;
+            }
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (data.conversationId && !conversationId) {
+                conversationId = data.conversationId;
+                setCurrentConversation(prev => ({ ...prev, id: data.conversationId }));
+                setConversations(prev => [...prev, { id: data.conversationId, title: userQuery.substring(0, 30) + '...', lastMessageTimestamp: new Date().toISOString() }]);
+              }
+
+              if (data.chunk) {
+                setCurrentConversation(prev => ({
+                  ...prev,
+                  messages: prev.messages.map(msg => {
+                    if (msg.id === botMessagePlaceholder.id) {
+                      const newBot = (msg.bot || '') + data.chunk;
+                      return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
+                    }
+                    return msg;
+                  })
+                }));
+              }
+
+              if (data.error) throw new Error(data.error);
+
+            } catch (e) {
+              console.error("Failed to parse stream data:", dataStr, e);
+            }
+          }
+        }
+      }
+
+      // Finalize the message state
+      setCurrentConversation(prev => ({
+        ...prev,
+        messages: prev.messages.map(msg =>
+          msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg
+        )
+      }));
+
+      // After finalizing, auto-save any memory-worthy info from the assistant reply
+      const botCandidate = extractMemoryCandidate(latestBotText);
+      if (botCandidate) {
+        createMemory(botCandidate);
+      }
+
+      setSelectedFile(null);
+      fetchUserStatus();
+
+    } catch (error) {
+      setCurrentConversation(prev => ({
+        ...prev,
+        messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== botMessagePlaceholder.id)
+      }));
+      setError(error.message || 'Error sending message.');
+    } finally {
+      setIsSending(false);
+    }
+  }, [selectedFile, isSending, availableModels, selectedModel, currentConversation.id, memory, setCurrentConversation, setMessage, setIsSending, setError, selectRelevantMemories, extractMemoryCandidate, createMemory]);
 
   // Inline edit-resend handlers
   const startEditMessage = useCallback((chat) => {
@@ -677,7 +902,7 @@ const App = () => {
     cancelEdit();
     // Resend as a new message in the flow
     await handleSendMessage(newText);
-  }, [editingMessageId, editingText]);
+  }, [editingMessageId, editingText, cancelEdit, handleSendMessage]);
 
   // Regenerate: find the nearest preceding user message for the given assistant index
   const regenerateFromMessageIndex = useCallback(async (assistantIndex) => {
@@ -695,7 +920,7 @@ const App = () => {
       }
       i--;
     }
-  }, [isSending, currentConversation.messages]);
+  }, [isSending, currentConversation.messages, handleSendMessage]);
 
   // Expose regenerate for toolbar buttons
   useEffect(() => {
@@ -726,7 +951,7 @@ const App = () => {
         return { ...m, reactions, userReaction };
       })
     }));
-  }, []);
+  }, [setCurrentConversation]);
   useEffect(() => {
     if (!isAuthenticated) return;
       fetchUserStatus();
@@ -834,34 +1059,30 @@ const App = () => {
         alert(error.response?.data?.error || 'Error summarizing conversation.');
       }
     }
-  }, [setContextMenu, axios, localStorage, setSummaryContent, setShowSummaryModal, setIsAuthenticated, setError]);
+  }, [setContextMenu, setSummaryContent, setShowSummaryModal, setIsAuthenticated, setError]);
   const memoizedMessages = useMemo(() => {
-    console.log('memoizedMessages recalculating with messages:', currentConversation.messages);
-    return currentConversation.messages.map((chat, index) => {
-      console.log('Rendering message:', chat);
-      return (
-        <ChatMessage
-          key={chat.id || index}
-          chat={chat}
-          index={index}
-          availableModels={availableModels}
-          selectedModel={selectedModel}
-          setCurrentConversation={setCurrentConversation}
-          conversationId={currentConversation.id}
-          handleSummarizeConversation={handleSummarizeConversation}
-          isLastMessage={index === currentConversation.messages.length - 1}
-          isSending={isSending}
-          editingMessageId={editingMessageId}
-          editingText={editingText}
-          setEditingText={setEditingText}
-          startEditMessage={startEditMessage}
-          saveEditResend={saveEditResend}
-          cancelEdit={cancelEdit}
-          onToggleReaction={toggleReaction}
-        />
-      );
-    });
-  }, [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, isSending, toggleReaction]);
+    return currentConversation.messages.map((chat, index) => (
+      <ChatMessage
+        key={chat.id || index}
+        chat={chat}
+        index={index}
+        availableModels={availableModels}
+        selectedModel={selectedModel}
+        setCurrentConversation={setCurrentConversation}
+        conversationId={currentConversation.id}
+        handleSummarizeConversation={handleSummarizeConversation}
+        isLastMessage={index === currentConversation.messages.length - 1}
+        isSending={isSending}
+        editingMessageId={editingMessageId}
+        editingText={editingText}
+        setEditingText={setEditingText}
+        startEditMessage={startEditMessage}
+        saveEditResend={saveEditResend}
+        cancelEdit={cancelEdit}
+        onToggleReaction={toggleReaction}
+      />
+    ));
+  }, [currentConversation.messages, availableModels, selectedModel, setCurrentConversation, currentConversation.id, isSending, toggleReaction, editingMessageId, editingText, setEditingText, startEditMessage, saveEditResend, cancelEdit, handleSummarizeConversation]);
 
   // === AUTH CONDITIONAL RETURN (after all hooks) ===
   if (!isAuthenticated) {
@@ -894,12 +1115,12 @@ const App = () => {
   }
 
   function fetchUserStatus() {
-    axios.get('http://localhost:5000/api/v1/user-status', {
+    axios.get('http://localhost:5000/api/v1/auth/me', {
           headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(response => {
-        setUserStatus(response.data);
-        setModelTokenBalances(response.data.modelTokenBalances || {});
+        setUserStatus(response.data.data);
+        setModelTokenBalances(response.data.data.tokenBalances || {});
         setShowNotification(true);
       })
       .catch(error => {
@@ -1074,87 +1295,93 @@ const App = () => {
     setConvPage(prev => prev + 1);
   };
 
-  const VirtualizedConversationList = ({ items, onClickItem, onDeleteItem, contextMenu, handleContextMenu, loadMore, hasMore }) => {
-    const itemCount = hasMore ? items.length + 1 : items.length;
-    const Row = ({ index, style }) => {
-      if (index === items.length) {
-        // Loader row
-        return (
-          <div style={{ ...style, padding: '8px 16px', color: '#aaa' }}>
-            {hasMore ? 'Loading more…' : ''}
-          </div>
-        );
+  const ConversationList = ({ items, onClickItem, onDeleteItem, contextMenu, handleContextMenu, loadMore, hasMore }) => {
+    const scrollRef = useRef(null);
+
+    const handleScroll = useCallback((e) => {
+      const node = e.currentTarget;
+      if (node.scrollTop + node.clientHeight >= node.scrollHeight - 10) {
+        loadMore();
       }
-      const conv = items[index];
-      return (
-        <div
-          style={{ ...style, cursor: 'pointer' }}
-          className="list-group-item list-group-item-action bg-transparent text-light d-flex justify-content-between align-items-center position-relative"
-          onClick={() => onClickItem(conv.id)}
-        >
-          <div>
-            <div>
-              <span dangerouslySetInnerHTML={{ __html: sanitizeContent(conv.title) }} />
+    }, [loadMore]);
+
+    return (
+      <div 
+        ref={scrollRef}
+        className="conversation-list-container"
+        onScroll={handleScroll}
+        style={{
+          height: '100%',
+          overflowY: 'auto',
+          paddingRight: '4px'
+        }}
+      >
+        {items.map((conv, index) => (
+          <div
+            key={conv.id}
+            className="list-group-item list-group-item-action bg-transparent text-light d-flex justify-content-between align-items-center position-relative"
+            onClick={() => onClickItem(conv.id)}
+            style={{ cursor: 'pointer' }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ 
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                <span dangerouslySetInnerHTML={{ __html: sanitizeContent(conv.title) }} />
+              </div>
               {conv.lastMessageTimestamp && (
-                <small className="d-block text-muted">{new Date(conv.lastMessageTimestamp).toLocaleString()}</small>
+                <small className="d-block text-muted">
+                  {new Date(conv.lastMessageTimestamp).toLocaleString()}
+                </small>
               )}
             </div>
-          </div>
-          <Button
-            variant="link"
-            className="text-light p-0 three-dots-button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleContextMenu(e, conv.id);
-            }}
-          >
-            <i className="fas fa-ellipsis-v"></i>
-          </Button>
-          {contextMenu.show && contextMenu.conversationId === conv.id && (
-            <div className="context-menu">
-              <div className="d-flex flex-column gap-1">
-                <Button
-                  variant="outline-light"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    exportConversation(conv);
-                    handleContextMenu(e, conv.id);
-                  }}
-                >
-                  Export
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteItem(conv.id);
-                  }}
-                >
-                  Delete
-                </Button>
+            <Button
+              variant="link"
+              className="text-light p-0 three-dots-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleContextMenu(e, conv.id);
+              }}
+              style={{ marginLeft: '8px', flexShrink: 0 }}
+            >
+              <i className="fas fa-ellipsis-v"></i>
+            </Button>
+            {contextMenu.show && contextMenu.conversationId === conv.id && (
+              <div className="context-menu">
+                <div className="d-flex flex-column gap-1">
+                  <Button
+                    variant="outline-light"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      exportConversation(conv);
+                      handleContextMenu(e, conv.id);
+                    }}
+                  >
+                    Export
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteItem(conv.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      );
-    };
-    return (
-      <div onScroll={(e) => {
-        const node = e.currentTarget;
-        if (node.scrollTop + node.clientHeight >= node.scrollHeight - 10) {
-          loadMore();
-        }
-      }}>
-        <List
-          height={400}
-          itemCount={itemCount}
-          itemSize={72}
-          width={'100%'}
-        >
-          {Row}
-        </List>
+            )}
+          </div>
+        ))}
+        {hasMore && (
+          <div style={{ padding: '8px 16px', color: '#aaa', textAlign: 'center' }}>
+            Loading more conversations...
+          </div>
+        )}
       </div>
     );
   };
@@ -1180,229 +1407,7 @@ const App = () => {
     setError(null);
   };
 
-  const handleSendMessage = async (userQuery) => {
-    if ((!userQuery && !selectedFile) || isSending) return;
-
-    const userMessage = {
-      id: Date.now(),
-      user: userQuery,
-      timestamp: new Date().toISOString(),
-      isUserMessage: true,
-      tokenMeter: { total: estimateTokens(userQuery || '') }
-    };
-
-    setMessage('');
-    setIsSending(true);
-
-    // Create a placeholder for the bot's response and add both messages to state
-    const selModelName = (availableModels.find(m => m.id === selectedModel)?.name) || 'AI';
-    const botMessagePlaceholder = {
-      id: Date.now() + 1,
-      bot: '',
-      timestamp: new Date().toISOString(),
-      isTyping: true,
-      modelUsed: selectedModel,
-      metadata: { modelLabel: selModelName },
-      tokenMeter: { total: 0 }
-    };
-
-    setCurrentConversation(prev => ({
-      ...prev,
-      messages: [...(prev.messages || []), userMessage, botMessagePlaceholder]
-    }));
-
-    const formData = new FormData();
-    formData.append('message', userQuery);
-    if (selectedFile) {
-      formData.append('file', selectedFile);
-    }
-    if (currentConversation.id) {
-      formData.append('conversationId', currentConversation.id);
-    }
-    // Auto recall: include relevant memory snippets for server-side use if supported
-    try {
-      if (memory.length === 0) {
-        // lazily fetch if empty
-        const memResp = await axios.get('http://localhost:5000/api/v1/memory', { headers: { 'x-auth-token': localStorage.getItem('token') } });
-        setMemory(memResp.data || []);
-      }
-    } catch (e) { /* ignore */ }
-    const hints = selectRelevantMemories(userQuery, 5);
-    if (hints.length) {
-      formData.append('memoryHints', JSON.stringify(hints));
-    }
-
-    // Auto-save: attempt to store memory-worthy info from the user's message
-    const userCandidate = extractMemoryCandidate(userQuery);
-    if (userCandidate) {
-      createMemory(userCandidate);
-    }
-
-    try {
-      const response = await fetch(`http://localhost:5000/api/v1/chat?model=${selectedModel}`, {
-        method: 'POST',
-        headers: {
-          'x-auth-token': localStorage.getItem('token'),
-        },
-        body: formData,
-      });
-
-      // Handle non-2xx responses early
-      if (!response.ok) {
-        let errMsg = `Request failed (${response.status})`;
-        try {
-          const data = await response.json();
-          if (data?.error) errMsg = data.error;
-        } catch (_) {}
-        // Remove messages and surface error
-        setCurrentConversation(prev => ({
-          ...prev,
-          messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== botMessagePlaceholder.id)
-        }));
-        throw new Error(errMsg);
-      }
-
-      const ctype = response.headers.get('content-type') || '';
-      const isSSE = ctype.includes('text/event-stream');
-      if (!isSSE) {
-        // Not labeled as SSE. Try to read text; if it looks like SSE ('data:'), parse it manually.
-        const maybeText = await response.text();
-        if (maybeText.trim().startsWith('data:')) {
-          const lines = maybeText.split('\n\n').filter(Boolean);
-          let conversationId = currentConversation.id;
-          for (const part of lines) {
-            if (!part.startsWith('data: ')) continue;
-            const dataStr = part.substring(6);
-            if (dataStr === '[DONE]') break;
-            try {
-              const data = JSON.parse(dataStr);
-              if (data.conversationId && !conversationId) {
-                conversationId = data.conversationId;
-                setCurrentConversation(prev => ({ ...prev, id: data.conversationId }));
-                setConversations(prev => [...prev, { id: data.conversationId, title: userQuery.substring(0, 30) + '...', lastMessageTimestamp: new Date().toISOString() }]);
-              }
-              if (data.chunk) {
-                setCurrentConversation(prev => ({
-                  ...prev,
-                  messages: prev.messages.map(msg => {
-                    if (msg.id === botMessagePlaceholder.id) {
-                      const newBot = (msg.bot || '') + data.chunk;
-                      latestBotText = newBot;
-                      return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
-                    }
-                    return msg;
-                  })
-                }));
-              }
-              if (data.error) throw new Error(data.error);
-            } catch (e) {
-              console.error('Failed to parse pseudo-SSE data:', dataStr, e);
-            }
-          }
-          // finalize
-          setCurrentConversation(prev => ({
-            ...prev,
-            messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
-          }));
-          return;
-        } else {
-          // True non-stream JSON response
-          try {
-            const data = JSON.parse(maybeText);
-            if (data?.error) throw new Error(data.error);
-          } catch (e) {
-            throw e instanceof Error ? e : new Error('Unexpected non-stream response');
-          }
-          setCurrentConversation(prev => ({
-            ...prev,
-            messages: prev.messages.map(msg => msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg)
-          }));
-          return;
-        }
-      }
-
-      if (!response.body) throw new Error("Streaming response not supported.");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let conversationId = currentConversation.id;
-      let latestBotText = '';
-
-      let done = false;
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const parts = chunk.split('\n\n').filter(Boolean);
-
-        for (const part of parts) {
-          if (part.startsWith('data: ')) {
-            const dataStr = part.substring(6);
-            if (dataStr === '[DONE]') {
-              done = true;
-              break;
-            }
-            try {
-              const data = JSON.parse(dataStr);
-
-              if (data.conversationId && !conversationId) {
-                conversationId = data.conversationId;
-                setCurrentConversation(prev => ({ ...prev, id: data.conversationId }));
-                setConversations(prev => [...prev, { id: data.conversationId, title: userQuery.substring(0, 30) + '...', lastMessageTimestamp: new Date().toISOString() }]);
-              }
-
-              if (data.chunk) {
-                setCurrentConversation(prev => ({
-                  ...prev,
-                  messages: prev.messages.map(msg => {
-                    if (msg.id === botMessagePlaceholder.id) {
-                      const newBot = (msg.bot || '') + data.chunk;
-                      return { ...msg, bot: newBot, tokenMeter: { total: estimateTokens(newBot) } };
-                    }
-                    return msg;
-                  })
-                }));
-              }
-
-              if (data.error) throw new Error(data.error);
-
-            } catch (e) {
-              console.error("Failed to parse stream data:", dataStr, e);
-            }
-          }
-        }
-      }
-
-      // Finalize the message state
-      setCurrentConversation(prev => ({
-        ...prev,
-        messages: prev.messages.map(msg =>
-          msg.id === botMessagePlaceholder.id ? { ...msg, isTyping: false } : msg
-        )
-      }));
-
-      // After finalizing, auto-save any memory-worthy info from the assistant reply
-      const botCandidate = extractMemoryCandidate(latestBotText);
-      if (botCandidate) {
-        createMemory(botCandidate);
-      }
-
-      setSelectedFile(null);
-      fetchUserStatus();
-
-    } catch (error) {
-      setCurrentConversation(prev => ({
-        ...prev,
-        messages: prev.messages.filter(msg => msg.id !== userMessage.id && msg.id !== botMessagePlaceholder.id)
-      }));
-      setError(error.message || 'Error sending message.');
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const handlePlusClick = () => {
+    const handlePlusClick = () => {
     if (isSending) return;
     fileInputRef.current.click();
   };
@@ -1443,22 +1448,7 @@ const App = () => {
     }
   };
 
-  // Calculate time until token reset (midnight UTC)
-  const getTimeUntilReset = () => {
-    const now = new Date();
-    const utcNow = Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() + 1, // Next day
-      0, 0, 0, 0 // Midnight UTC
-    );
-    
-    const timeUntilReset = utcNow - now.getTime();
-    const hours = Math.floor(timeUntilReset / (1000 * 60 * 60));
-    const minutes = Math.floor((timeUntilReset % (1000 * 60 * 60)) / (1000 * 60));
-    
-    return `${hours}h ${minutes}m`;
-  };
+
 
   const handleDeleteMemory = async (id) => {
     try {
@@ -1522,7 +1512,7 @@ const App = () => {
                 </EnhancedButton>
                 
                 <div className="chat-list-scroll">
-                  <VirtualizedConversationList 
+                  <ConversationList 
                     items={conversations}
                     onClickItem={handleConversationClick}
                     onDeleteItem={handleDeleteConversation}
@@ -1811,6 +1801,8 @@ const App = () => {
                   fileInputRef={fileInputRef}
                   mode={mode}
                   modePrompts={MODE_PROMPTS}
+                  sidebarOpen={isMobile ? sidebarOpen : showSidebar}
+                  isMobile={isMobile}
                 />
               </>
             } />
@@ -1832,9 +1824,9 @@ const App = () => {
               role="searchbox"
             />
             {memory.length > 0 ? (
-              <ul className="list-group" role="list" aria-label="Memory items">
+              <ul className="list-group" aria-label="Memory items">
                 {memory.filter(mem => mem.text.toLowerCase().includes(searchTerm.toLowerCase())).map(mem => (
-                  <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center" role="listitem">
+                  <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center">
                     {editingMemory?.id === mem.id ? (
                       <input 
                         type="text" 
@@ -1909,4 +1901,11 @@ const App = () => {
   );
 }
 
-export default App;
+// Wrap the entire app with ErrorBoundary
+const AppWithErrorBoundary = () => (
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);
+
+export default AppWithErrorBoundary;
