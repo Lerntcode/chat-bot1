@@ -768,11 +768,6 @@ app.post(
     }
 
     // --- AI Stream Generation ---
-    const systemMessage = {
-      role: "system",
-      content: "You are a helpful AI assistant. Use any provided 'memory' context to personalize responses. Do not claim you lack memory; if the user shares a fact to remember, acknowledge it briefly (e.g., 'Noted') and use it later. Provide direct answers without exposing internal reasoning. Avoid prefacing with 'Answer:' or 'Response:'."
-    };
-    
     // Get conversation history
     const conversationHistory = (conversation.Messages || []).flatMap(msg => [
       ...(msg.user ? [{ role: "user", content: msg.user }] : []),
@@ -803,15 +798,17 @@ app.post(
       } catch (_) {}
     }
 
-    // Build a memory context system message if hints provided
-    const memorySystemMsg = memoryHints.length
-      ? { role: "system", content: `Relevant user memory (use respectfully and privately, do not ask the user to repeat):\n- ${memoryHints.join("\n- ")}` }
-      : null;
+    // Combine all system instructions into a single system message to avoid consecutive system messages
+    let systemContent = "You are a helpful AI assistant. Use any provided 'memory' context to personalize responses. Do not claim you lack memory; if the user shares a fact to remember, acknowledge it briefly (e.g., 'Noted') and use it later. Provide direct answers without exposing internal reasoning. Avoid prefacing with 'Answer:' or 'Response:'.";
+    
+    // Add memory context to the system message if available
+    if (memoryHints.length > 0) {
+      systemContent += `\n\nRelevant user memory (use respectfully and privately, do not ask the user to repeat):\n- ${memoryHints.join("\n- ")}`;
+    }
 
-    // Combine system message with optional memory hints, conversation history and current message
+    // Combine system message with conversation history and current message
     const messagesForAI = [
-      systemMessage,
-      ...(memorySystemMsg ? [memorySystemMsg] : []),
+      { role: "system", content: systemContent },
       ...conversationHistory,
       { role: "user", content: userMessage }
     ];
@@ -1763,7 +1760,9 @@ const startServer = async () => {
     
     // Prefer migrations in production; optionally allow sync in dev
     if (env.ALLOW_DB_SYNC) {
-      await sequelize.sync({ alter: true });
+      // Use sync with alter: true but with force: false to be more conservative
+      // This should help avoid the "Too many keys" issue by not recreating indexes unnecessarily
+      await sequelize.sync({ alter: { drop: false } }); // Only add/drop columns, not indexes
       console.log('✅ Database schema synchronized (sync)');
     } else {
       const { runMigrations } = require('./database/run-migrations');
