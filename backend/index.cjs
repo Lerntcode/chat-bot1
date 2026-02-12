@@ -98,7 +98,7 @@ const MODEL_CONFIG = {
     available: true // Will work when you get GPT API
   },
   'gpt-4.1-mini': {
-    id: 'gpt-4.1-mini', 
+    id: 'gpt-4.1-mini',
     name: 'GPT-4.1 Mini',
     description: 'Affordable model balancing speed and intelligence',
     baseTokenCost: 100, // Average tokens per message
@@ -106,7 +106,7 @@ const MODEL_CONFIG = {
   },
   'gpt-4.1-nano': {
     id: 'gpt-4.1-nano',
-    name: 'GPT-4.1 Nano', 
+    name: 'GPT-4.1 Nano',
     description: 'Fastest for low-latency tasks (Powered by Mixtral)',
     baseTokenCost: 20, // Average tokens per message
     available: true // Uses TogetherAI Mixtral
@@ -154,7 +154,7 @@ async function updateModelTokenBalance(userId, modelId, amount) {
     where: { userId, modelId },
     defaults: { balance: 0 }
   });
-  
+
   balance.balance += amount;
   await balance.save();
   return balance.balance;
@@ -164,12 +164,12 @@ async function getAllModelTokenBalances(userId) {
   const balances = await ModelTokenBalance.findAll({
     where: { userId }
   });
-  
+
   const balanceMap = {};
   balances.forEach(balance => {
     balanceMap[balance.modelId] = balance.balance;
   });
-  
+
   return balanceMap;
 }
 
@@ -361,7 +361,13 @@ app.use(securityHeaders);
 app.use(securityLogging);
 
 // Apply input sanitization
-app.use(sanitizeBody);
+// Apply input sanitization (skip for code execution to avoid breaking code syntax)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/v1/code')) {
+    return next();
+  }
+  sanitizeBody(req, res, next);
+});
 app.use(sanitizeQuery);
 app.use(sanitizeParams);
 
@@ -385,6 +391,10 @@ app.use('/api/v1/auth', authRoutes.default);
 app.use('/api/v1/auth', googleAuthRoutes);
 app.use('/api/v1/logs', logsRoutes);
 app.use('/api/v1/security', securityRoutes);
+
+// Code Execution Route
+const codeRoutes = require('./routes/code');
+app.use('/api/v1/code', codeRoutes);
 
 // Apply upload rate limiting to file upload endpoints
 app.use('/api/v1/upload', uploadLimiter);
@@ -497,241 +507,241 @@ app.post(
   validate,
   technicalQuestionDetector,
   async (req, res, next) => {
-  let clientClosed = false;
-  res.on('close', () => { clientClosed = true; });
-  // --- Pre-computation and Validation ---
-  const { message, conversationId: initialConversationId } = req.body;
-  const userId = req.user.id;
-  const selectedModel = req.query.model || 'gpt-4.1-nano';
-  const modelConfig = MODEL_CONFIG[selectedModel];
+    let clientClosed = false;
+    res.on('close', () => { clientClosed = true; });
+    // --- Pre-computation and Validation ---
+    const { message, conversationId: initialConversationId } = req.body;
+    const userId = req.user.id;
+    const selectedModel = req.query.model || 'gpt-4.1-nano';
+    const modelConfig = MODEL_CONFIG[selectedModel];
 
-  if (!modelConfig) {
-    return res.status(400).json({ error: `Unsupported model: ${selectedModel}` });
-  }
-
-  // Basic request validation
-  if (typeof message !== 'string' || message.trim().length === 0) {
-    return res.status(400).json({ error: 'Message is required' });
-  }
-
-  logger.info({ action: 'chat_request', userId, conversationId: initialConversationId, message, model: selectedModel });
-
-  async function shouldRemember(message) {
-    // Heuristic explicit checks first
-    const lower = (message || '').toLowerCase();
-    const isExplicit = /\b(remember|save this|store this|keep this)\b/.test(lower);
-    if (isExplicit) return { should: true, isExplicit: true };
-
-    // If TogetherAI is unavailable, use lightweight heuristics
-    if (!together) {
-      const heuristics = [
-        /\bmy name is\b/i,
-        /\bcall me\b/i,
-        /\bemail\b[:\s]/i,
-        /\bphone\b[:\s]/i,
-        /\b(i|we)\s+prefer\b/i,
-        /\btimezone\b|\btime zone\b/i,
-        /\bbirthday\b|\bdob\b/i
-      ];
-      const should = heuristics.some(rx => rx.test(message));
-      return { should, isExplicit: false };
+    if (!modelConfig) {
+      return res.status(400).json({ error: `Unsupported model: ${selectedModel}` });
     }
 
-    // AI judgment call via TogetherAI
-    try {
-      const judgmentPrompt = `Does the following message contain a useful fact worth remembering for future conversations? Answer with only YES or NO. Message: "${message}"`;
-      const response = await withTimeout(
-        together.chat.completions.create({
-          model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
-          messages: [{ role: "user", content: judgmentPrompt }],
-          max_tokens: 2,
-        }),
-        10000,
-        'The AI took too long to decide if this should be remembered.',
-        'Memory Judgment'
-      );
-      const decision = response.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim().toUpperCase();
-      return { should: decision === "YES", isExplicit: false };
-    } catch (error) {
-      logger.error({ action: 'llm_memory_judgment', userId: req.user.id, error: error.message, isTimeout: error.isTimeout });
-      // Fall back to heuristics on error
-      const heuristics = [
-        /\bmy name is\b/i,
-        /\bcall me\b/i,
-        /\bemail\b[:\s]/i,
-        /\bphone\b[:\s]/i,
-        /\b(i|we)\s+prefer\b/i,
-        /\btimezone\b|\btime zone\b/i,
-        /\bbirthday\b|\bdob\b/i
-      ];
-      const should = heuristics.some(rx => rx.test(message));
-      return { should, isExplicit: false };
+    // Basic request validation
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Message is required' });
     }
-  };
 
-  // Simple memory categorization and expiration helpers
-  function categorizeMemory(text) {
-    const t = text.toLowerCase();
-    if (t.includes('email') || t.includes('@')) return 'contact';
-    if (t.includes('birthday') || t.includes('anniversary')) return 'personal';
-    if (t.includes('meeting') || t.includes('call') || t.includes('schedule')) return 'schedule';
-    if (t.includes('project') || t.includes('task') || t.includes('deadline')) return 'work';
-    return 'general';
-  }
-  function getExpiryForCategory(category) {
-    const now = new Date();
-    const map = {
-      schedule: 7,      // 7 days
-      work: 30,         // 30 days
-      personal: 180,    // 6 months
-      contact: 365,     // 1 year
-      general: 90       // 90 days
-    };
-    const days = map[category] ?? 90;
-    return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  }
+    logger.info({ action: 'chat_request', userId, conversationId: initialConversationId, message, model: selectedModel });
 
-  // Stream-safe filter to remove internal reasoning before sending to client
-  let _inHiddenReasoningBlock = false; // persists for this request scope
-  let _filterBuffer = '';
-  function filterReasoningDelta(input) {
-    if (!input) return '';
-    _filterBuffer += input;
-    let output = '';
-    while (true) {
-      if (_inHiddenReasoningBlock) {
-        const closeIdx = _filterBuffer.indexOf('</think>');
-        if (closeIdx === -1) {
-          // Still inside hidden block; consume all and wait for closing tag in future chunks
-          _filterBuffer = '';
-          return output;
-        }
-        // Drop everything up to and including closing tag
-        _filterBuffer = _filterBuffer.slice(closeIdx + 8);
-        _inHiddenReasoningBlock = false;
-        continue;
+    async function shouldRemember(message) {
+      // Heuristic explicit checks first
+      const lower = (message || '').toLowerCase();
+      const isExplicit = /\b(remember|save this|store this|keep this)\b/.test(lower);
+      if (isExplicit) return { should: true, isExplicit: true };
+
+      // If TogetherAI is unavailable, use lightweight heuristics
+      if (!together) {
+        const heuristics = [
+          /\bmy name is\b/i,
+          /\bcall me\b/i,
+          /\bemail\b[:\s]/i,
+          /\bphone\b[:\s]/i,
+          /\b(i|we)\s+prefer\b/i,
+          /\btimezone\b|\btime zone\b/i,
+          /\bbirthday\b|\bdob\b/i
+        ];
+        const should = heuristics.some(rx => rx.test(message));
+        return { should, isExplicit: false };
       }
-      const openIdx = _filterBuffer.indexOf('<think>');
-      if (openIdx === -1) {
-        // No hidden block markers; emit all we have
-        output += _filterBuffer;
-        _filterBuffer = '';
-        break;
-      }
-      // Emit content before opening tag, then enter hidden block
-      output += _filterBuffer.slice(0, openIdx);
-      _filterBuffer = _filterBuffer.slice(openIdx + 7);
-      _inHiddenReasoningBlock = true;
-    }
-    // Additional conservative cleanup: remove typical reasoning lead-ins per line
-    const reasoningPatterns = [
-      /^\s*(okay,?\s*)?(let me|i (need|should|will|am going to|think)|thinking|step by step|first,|second,|third,|next,)/i,
-      /^\s*(here's my plan|i'll start by|i will start by|let's|lets|we (should|need to))/i
-    ];
-    output = output
-      .split(/(\r?\n)/)
-      .map(seg => {
-        if (seg === '\n' || seg === '\r\n') return seg;
-        const line = seg;
-        return reasoningPatterns.some(rx => rx.test(line)) ? '' : line;
-      })
-      .join('');
-    return output;
-  }
 
-  try {
-    const user = await User.findByPk(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const isPaidAndActive = user.isPaidUser && user.paidUntil && new Date(user.paidUntil) > new Date();
-
-    if (!isPaidAndActive) {
-      const modelTokenBalance = await getModelTokenBalance(userId, selectedModel);
-      if (modelTokenBalance < modelConfig.baseTokenCost) {
-        return res.status(403).json({ error: `Insufficient ${modelConfig.name} tokens. This message costs at least ${modelConfig.baseTokenCost} tokens. You have ${modelTokenBalance} ${modelConfig.name} tokens.` });
-      }
-    }
-
-    // --- Conversation and Message Processing ---
-    let conversation = initialConversationId
-      ? await Conversation.findByPk(initialConversationId, { include: [{ model: Message, as: 'Messages' }] })
-      : await Conversation.create({ title: 'New Chat', lastMessageTimestamp: new Date(), userId });
-
-    // Note: do not write to response before SSE headers are set.
-      
-    let userMessage = message;
-    let fileInfo = null;
-    // File validation and processing
-      if (req.file) {
+      // AI judgment call via TogetherAI
       try {
-        // Per-tier file size limits
-        const stats = fs.statSync(req.file.path);
-        const maxSizeBytes = (req.user?.isPaidUser ? 10 : 2) * 1024 * 1024; // 10MB vs 2MB
-        if (stats.size > maxSizeBytes) {
-          fs.unlinkSync(req.file.path);
-          return res.status(413).json({ error: 'Uploaded file too large for your plan.' });
-        }
-
-        // Magic number sniffing
-        const detected = await FileType.fromFile(req.file.path);
-        const ext = path.extname(req.file.originalname).toLowerCase();
-        const mimeOk = (
-          (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext) && detected && detected.mime.startsWith('image/')) ||
-          (ext === '.pdf' && detected && detected.mime === 'application/pdf') ||
-          (['.doc', '.docx'].includes(ext)) ||
-          (ext === '.txt' && (!detected || detected.mime.startsWith('text/')))
+        const judgmentPrompt = `Does the following message contain a useful fact worth remembering for future conversations? Answer with only YES or NO. Message: "${message}"`;
+        const response = await withTimeout(
+          together.chat.completions.create({
+            model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            messages: [{ role: "user", content: judgmentPrompt }],
+            max_tokens: 2,
+          }),
+          10000,
+          'The AI took too long to decide if this should be remembered.',
+          'Memory Judgment'
         );
-        if (!mimeOk) {
-          fs.unlinkSync(req.file.path);
-          return res.status(400).json({ error: 'File content type does not match allowed formats.' });
-        }
-        const fileProcessor = new FileProcessor();
-        const result = await fileProcessor.processFile(req.file.path, req.file.originalname);
-        
-        if (result.success) {
-          const fileContent = result.content;
-          fileInfo = {
-            fileName: result.fileName,
-            fileType: result.fileType,
-            wordCount: result.wordCount,
-            summary: fileProcessor.getFileSummary(result.content)
-          };
-          userMessage += `\n\n📎 File attached: ${result.fileName} (${result.fileType}, ${result.wordCount} words)`;
-          if (!message.trim()) {
-            userMessage = `Please analyze this ${result.fileType} file: ${result.fileName}\n\nFile content:\n${fileContent}`;
-          } else {
-            userMessage += `\n\nFile content:\n${fileContent}`;
-          }
-        } else {
-          userMessage += `\n\n❌ Failed to process file: ${result.error}`;
-        }
+        const decision = response.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/g, '').trim().toUpperCase();
+        return { should: decision === "YES", isExplicit: false };
       } catch (error) {
-        userMessage += `\n\n❌ Error processing file: ${error.message}`;
+        logger.error({ action: 'llm_memory_judgment', userId: req.user.id, error: error.message, isTimeout: error.isTimeout });
+        // Fall back to heuristics on error
+        const heuristics = [
+          /\bmy name is\b/i,
+          /\bcall me\b/i,
+          /\bemail\b[:\s]/i,
+          /\bphone\b[:\s]/i,
+          /\b(i|we)\s+prefer\b/i,
+          /\btimezone\b|\btime zone\b/i,
+          /\bbirthday\b|\bdob\b/i
+        ];
+        const should = heuristics.some(rx => rx.test(message));
+        return { should, isExplicit: false };
       }
+    };
+
+    // Simple memory categorization and expiration helpers
+    function categorizeMemory(text) {
+      const t = text.toLowerCase();
+      if (t.includes('email') || t.includes('@')) return 'contact';
+      if (t.includes('birthday') || t.includes('anniversary')) return 'personal';
+      if (t.includes('meeting') || t.includes('call') || t.includes('schedule')) return 'schedule';
+      if (t.includes('project') || t.includes('task') || t.includes('deadline')) return 'work';
+      return 'general';
     }
-      
-    // Save user message first
-    await Message.create({ user: userMessage, conversationId: conversation.id, timestamp: new Date().toISOString() });
+    function getExpiryForCategory(category) {
+      const now = new Date();
+      const map = {
+        schedule: 7,      // 7 days
+        work: 30,         // 30 days
+        personal: 180,    // 6 months
+        contact: 365,     // 1 year
+        general: 90       // 90 days
+      };
+      const days = map[category] ?? 90;
+      return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    }
 
-    const memoryCheck = await shouldRemember(userMessage);
-
-    let botResponseText = '';
-    if (memoryCheck.should) {
-      let memoryToSave;
-
-      if (memoryCheck.isExplicit) {
-        memoryToSave = userMessage.toLowerCase().includes("remember:") 
-          ? userMessage.substring(userMessage.toLowerCase().indexOf("remember:") + 9).trim() 
-          : userMessage.substring(userMessage.toLowerCase().indexOf("remember") + 8).trim();
-        botResponseText = `OK, I'll remember that: "${memoryToSave}"`;
-      } else {
-        memoryToSave = userMessage; // Save the whole message as it was deemed important
-        botResponseText = `(Noted: "${memoryToSave}")`; // A more subtle confirmation
+    // Stream-safe filter to remove internal reasoning before sending to client
+    let _inHiddenReasoningBlock = false; // persists for this request scope
+    let _filterBuffer = '';
+    function filterReasoningDelta(input) {
+      if (!input) return '';
+      _filterBuffer += input;
+      let output = '';
+      while (true) {
+        if (_inHiddenReasoningBlock) {
+          const closeIdx = _filterBuffer.indexOf('</think>');
+          if (closeIdx === -1) {
+            // Still inside hidden block; consume all and wait for closing tag in future chunks
+            _filterBuffer = '';
+            return output;
+          }
+          // Drop everything up to and including closing tag
+          _filterBuffer = _filterBuffer.slice(closeIdx + 8);
+          _inHiddenReasoningBlock = false;
+          continue;
+        }
+        const openIdx = _filterBuffer.indexOf('<think>');
+        if (openIdx === -1) {
+          // No hidden block markers; emit all we have
+          output += _filterBuffer;
+          _filterBuffer = '';
+          break;
+        }
+        // Emit content before opening tag, then enter hidden block
+        output += _filterBuffer.slice(0, openIdx);
+        _filterBuffer = _filterBuffer.slice(openIdx + 7);
+        _inHiddenReasoningBlock = true;
       }
-      
-      if (memoryToSave) {
+      // Additional conservative cleanup: remove typical reasoning lead-ins per line
+      const reasoningPatterns = [
+        /^\s*(okay,?\s*)?(let me|i (need|should|will|am going to|think)|thinking|step by step|first,|second,|third,|next,)/i,
+        /^\s*(here's my plan|i'll start by|i will start by|let's|lets|we (should|need to))/i
+      ];
+      output = output
+        .split(/(\r?\n)/)
+        .map(seg => {
+          if (seg === '\n' || seg === '\r\n') return seg;
+          const line = seg;
+          return reasoningPatterns.some(rx => rx.test(line)) ? '' : line;
+        })
+        .join('');
+      return output;
+    }
+
+    try {
+      const user = await User.findByPk(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const isPaidAndActive = user.isPaidUser && user.paidUntil && new Date(user.paidUntil) > new Date();
+
+      if (!isPaidAndActive) {
+        const modelTokenBalance = await getModelTokenBalance(userId, selectedModel);
+        if (modelTokenBalance < modelConfig.baseTokenCost) {
+          return res.status(403).json({ error: `Insufficient ${modelConfig.name} tokens. This message costs at least ${modelConfig.baseTokenCost} tokens. You have ${modelTokenBalance} ${modelConfig.name} tokens.` });
+        }
+      }
+
+      // --- Conversation and Message Processing ---
+      let conversation = initialConversationId
+        ? await Conversation.findByPk(initialConversationId, { include: [{ model: Message, as: 'Messages' }] })
+        : await Conversation.create({ title: 'New Chat', lastMessageTimestamp: new Date(), userId });
+
+      // Note: do not write to response before SSE headers are set.
+
+      let userMessage = message;
+      let fileInfo = null;
+      // File validation and processing
+      if (req.file) {
+        try {
+          // Per-tier file size limits
+          const stats = fs.statSync(req.file.path);
+          const maxSizeBytes = (req.user?.isPaidUser ? 10 : 2) * 1024 * 1024; // 10MB vs 2MB
+          if (stats.size > maxSizeBytes) {
+            fs.unlinkSync(req.file.path);
+            return res.status(413).json({ error: 'Uploaded file too large for your plan.' });
+          }
+
+          // Magic number sniffing
+          const detected = await FileType.fromFile(req.file.path);
+          const ext = path.extname(req.file.originalname).toLowerCase();
+          const mimeOk = (
+            (['.png', '.jpg', '.jpeg', '.gif', '.bmp'].includes(ext) && detected && detected.mime.startsWith('image/')) ||
+            (ext === '.pdf' && detected && detected.mime === 'application/pdf') ||
+            (['.doc', '.docx'].includes(ext)) ||
+            (ext === '.txt' && (!detected || detected.mime.startsWith('text/')))
+          );
+          if (!mimeOk) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'File content type does not match allowed formats.' });
+          }
+          const fileProcessor = new FileProcessor();
+          const result = await fileProcessor.processFile(req.file.path, req.file.originalname);
+
+          if (result.success) {
+            const fileContent = result.content;
+            fileInfo = {
+              fileName: result.fileName,
+              fileType: result.fileType,
+              wordCount: result.wordCount,
+              summary: fileProcessor.getFileSummary(result.content)
+            };
+            userMessage += `\n\n📎 File attached: ${result.fileName} (${result.fileType}, ${result.wordCount} words)`;
+            if (!message.trim()) {
+              userMessage = `Please analyze this ${result.fileType} file: ${result.fileName}\n\nFile content:\n${fileContent}`;
+            } else {
+              userMessage += `\n\nFile content:\n${fileContent}`;
+            }
+          } else {
+            userMessage += `\n\n❌ Failed to process file: ${result.error}`;
+          }
+        } catch (error) {
+          userMessage += `\n\n❌ Error processing file: ${error.message}`;
+        }
+      }
+
+      // Save user message first
+      await Message.create({ user: userMessage, conversationId: conversation.id, timestamp: new Date().toISOString() });
+
+      const memoryCheck = await shouldRemember(userMessage);
+
+      let botResponseText = '';
+      if (memoryCheck.should) {
+        let memoryToSave;
+
+        if (memoryCheck.isExplicit) {
+          memoryToSave = userMessage.toLowerCase().includes("remember:")
+            ? userMessage.substring(userMessage.toLowerCase().indexOf("remember:") + 9).trim()
+            : userMessage.substring(userMessage.toLowerCase().indexOf("remember") + 8).trim();
+          botResponseText = `OK, I'll remember that: "${memoryToSave}"`;
+        } else {
+          memoryToSave = userMessage; // Save the whole message as it was deemed important
+          botResponseText = `(Noted: "${memoryToSave}")`; // A more subtle confirmation
+        }
+
+        if (memoryToSave) {
           const category = categorizeMemory(memoryToSave);
           const expiresAt = getExpiryForCategory(category);
           await Memory.create({ text: memoryToSave, category, expiresAt, timestamp: new Date().toISOString(), userId: req.user.id });
@@ -740,15 +750,15 @@ app.post(
           await cache.del(`memory:${req.user.id}`);
 
           // Opportunistic cleanup of expired memories
-          try { await Memory.destroy({ where: { userId: req.user.id, expiresAt: { [Op.lt]: new Date() } } }); } catch (_) {}
-      }
+          try { await Memory.destroy({ where: { userId: req.user.id, expiresAt: { [Op.lt]: new Date() } } }); } catch (_) { }
+        }
 
-      // If it was an explicit command, we can just send the confirmation and stop.
-      if (memoryCheck.isExplicit) {
+        // If it was an explicit command, we can just send the confirmation and stop.
+        if (memoryCheck.isExplicit) {
           const botResponse = {
-              user: userMessage,
-              bot: botResponseText,
-              timestamp: new Date().toISOString()
+            user: userMessage,
+            bot: botResponseText,
+            timestamp: new Date().toISOString()
           };
           const friendlyLabel = (m => {
             if (m === 'gpt-4.1-nano') {
@@ -758,160 +768,160 @@ app.post(
             if (m === 'gpt-4.1') return 'Qwen 235B A22B';
             return m;
           })(selectedModel);
-          await Message.create({ ...botResponse, conversationId: conversation.id, modelUsed: selectedModel, metadata: { ...(botResponse.metadata||{}), modelLabel: friendlyLabel } });
+          await Message.create({ ...botResponse, conversationId: conversation.id, modelUsed: selectedModel, metadata: { ...(botResponse.metadata || {}), modelLabel: friendlyLabel } });
           await conversation.update({ lastMessageTimestamp: new Date() });
           res.json({ conversationId: conversation.id, message: botResponse });
           return;
+        }
+        // If it was an implicit "remember", we still need to get a proper chat response.
+        // We'll prepend a subtle confirmation before streaming begins.
       }
-      // If it was an implicit "remember", we still need to get a proper chat response.
-      // We'll prepend a subtle confirmation before streaming begins.
-    }
 
-    // --- AI Stream Generation ---
-    // Get conversation history
-    const conversationHistory = (conversation.Messages || []).flatMap(msg => [
-      ...(msg.user ? [{ role: "user", content: msg.user }] : []),
-      ...(msg.bot ? [{ role: "assistant", content: msg.bot }] : [])
-    ]);
-    
-    // Parse optional memory hints coming from the frontend (stringified JSON array)
-    let memoryHints = [];
-    try {
-      if (req.body.memoryHints) {
-        const parsed = JSON.parse(req.body.memoryHints);
-        if (Array.isArray(parsed)) memoryHints = parsed.filter(Boolean).slice(0, 8);
-      }
-    } catch (_) {}
+      // --- AI Stream Generation ---
+      // Get conversation history
+      const conversationHistory = (conversation.Messages || []).flatMap(msg => [
+        ...(msg.user ? [{ role: "user", content: msg.user }] : []),
+        ...(msg.bot ? [{ role: "assistant", content: msg.bot }] : [])
+      ]);
 
-    // Fallback: if no hints provided, pull a few recent memories from DB/cache
-    if (memoryHints.length === 0) {
+      // Parse optional memory hints coming from the frontend (stringified JSON array)
+      let memoryHints = [];
       try {
-        const cacheKey = `memory:${req.user.id}`;
-        const cached = await cache.get(cacheKey);
-        const mems = cached || (await Memory.findAll({
-          where: { userId: req.user.id, [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] },
-          order: [['timestamp', 'DESC']],
-          limit: 5,
-        }));
-        if (!cached) await cache.set(cacheKey, mems, 30);
-        memoryHints = (mems || []).map(m => m.text).filter(Boolean);
-      } catch (_) {}
-    }
+        if (req.body.memoryHints) {
+          const parsed = JSON.parse(req.body.memoryHints);
+          if (Array.isArray(parsed)) memoryHints = parsed.filter(Boolean).slice(0, 8);
+        }
+      } catch (_) { }
 
-    // Combine all system instructions into a single system message to avoid consecutive system messages
-    let systemContent = "You are a helpful AI assistant. Use any provided 'memory' context to personalize responses. Do not claim you lack memory; if the user shares a fact to remember, acknowledge it briefly (e.g., 'Noted') and use it later. Provide direct answers without exposing internal reasoning. Avoid prefacing with 'Answer:' or 'Response:'.";
-    
-    // Add memory context to the system message if available
-    if (memoryHints.length > 0) {
-      systemContent += `\n\nRelevant user memory (use respectfully and privately, do not ask the user to repeat):\n- ${memoryHints.join("\n- ")}`;
-    }
+      // Fallback: if no hints provided, pull a few recent memories from DB/cache
+      if (memoryHints.length === 0) {
+        try {
+          const cacheKey = `memory:${req.user.id}`;
+          const cached = await cache.get(cacheKey);
+          const mems = cached || (await Memory.findAll({
+            where: { userId: req.user.id, [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] },
+            order: [['timestamp', 'DESC']],
+            limit: 5,
+          }));
+          if (!cached) await cache.set(cacheKey, mems, 30);
+          memoryHints = (mems || []).map(m => m.text).filter(Boolean);
+        } catch (_) { }
+      }
 
-    // Combine system message with conversation history and current message
-    const messagesForAI = [
-      { role: "system", content: systemContent },
-      ...conversationHistory,
-      { role: "user", content: userMessage }
-    ];
+      // Combine all system instructions into a single system message to avoid consecutive system messages
+      let systemContent = "You are a helpful AI assistant. Use any provided 'memory' context to personalize responses. Do not claim you lack memory; if the user shares a fact to remember, acknowledge it briefly (e.g., 'Noted') and use it later. Provide direct answers without exposing internal reasoning. Avoid prefacing with 'Answer:' or 'Response:'.";
 
-    // Create provider stream BEFORE sending SSE headers so we can return JSON on error
-    let stream;
-    try {
-      stream = await createStream({ model: selectedModel, messages: messagesForAI });
-    } catch (err) {
-      logger.error({ action: 'chat_stream_error', userId, error: err?.message || String(err) });
-      return res.status(502).json({ error: `Upstream model error: ${err?.message || 'unknown'}` });
-    }
+      // Add memory context to the system message if available
+      if (memoryHints.length > 0) {
+        systemContent += `\n\nRelevant user memory (use respectfully and privately, do not ask the user to repeat):\n- ${memoryHints.join("\n- ")}`;
+      }
 
-    // --- Prepare for Streaming (after stream created) ---
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+      // Combine system message with conversation history and current message
+      const messagesForAI = [
+        { role: "system", content: systemContent },
+        ...conversationHistory,
+        { role: "user", content: userMessage }
+      ];
 
-    // After headers are set, send the new conversationId once
-    if (!initialConversationId) {
+      // Create provider stream BEFORE sending SSE headers so we can return JSON on error
+      let stream;
       try {
-        res.write(`data: ${JSON.stringify({ conversationId: conversation.id })}\n\n`);
-      } catch (_) {}
-    }
+        stream = await createStream({ model: selectedModel, messages: messagesForAI });
+      } catch (err) {
+        logger.error({ action: 'chat_stream_error', userId, error: err?.message || String(err) });
+        return res.status(502).json({ error: `Upstream model error: ${err?.message || 'unknown'}` });
+      }
 
-    const heartbeat = setInterval(() => {
-      if (!res.headersSent) {
-        res.flushHeaders?.();
+      // --- Prepare for Streaming (after stream created) ---
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      // After headers are set, send the new conversationId once
+      if (!initialConversationId) {
+        try {
+          res.write(`data: ${JSON.stringify({ conversationId: conversation.id })}\n\n`);
+        } catch (_) { }
       }
-      if (!res.writableEnded) {
-        res.write('event: ping\n');
-        res.write(`data: ${Date.now()}\n\n`);
-      }
-    }, 15000);
-    try {
-      // If we saved memory implicitly earlier, send a subtle confirmation prefix
-      if (memoryCheck.should && !memoryCheck.isExplicit) {
-        const prefix = `(Noted) `;
-        botResponseText += prefix;
-        try { res.write(`data: ${JSON.stringify({ chunk: prefix })}\n\n`); } catch(_) {}
-      }
-      for await (const chunk of stream) {
-        if (clientClosed) break;
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          const filtered = filterReasoningDelta(content);
-          if (filtered) {
-            botResponseText += filtered;
-            res.write(`data: ${JSON.stringify({ chunk: filtered })}\n\n`);
+
+      const heartbeat = setInterval(() => {
+        if (!res.headersSent) {
+          res.flushHeaders?.();
+        }
+        if (!res.writableEnded) {
+          res.write('event: ping\n');
+          res.write(`data: ${Date.now()}\n\n`);
+        }
+      }, 15000);
+      try {
+        // If we saved memory implicitly earlier, send a subtle confirmation prefix
+        if (memoryCheck.should && !memoryCheck.isExplicit) {
+          const prefix = `(Noted) `;
+          botResponseText += prefix;
+          try { res.write(`data: ${JSON.stringify({ chunk: prefix })}\n\n`); } catch (_) { }
+        }
+        for await (const chunk of stream) {
+          if (clientClosed) break;
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) {
+            const filtered = filterReasoningDelta(content);
+            if (filtered) {
+              botResponseText += filtered;
+              res.write(`data: ${JSON.stringify({ chunk: filtered })}\n\n`);
+            }
           }
         }
+      } catch (streamErr) {
+        logger.error({ action: 'chat_stream_error', userId, error: streamErr?.message || String(streamErr) });
+        if (!res.writableEnded) {
+          res.write('event: error\n');
+          res.write(`data: ${JSON.stringify({ error: streamErr?.message || 'Streaming failed' })}\n\n`);
+        }
       }
-    } catch (streamErr) {
-      logger.error({ action: 'chat_stream_error', userId, error: streamErr?.message || String(streamErr) });
-      if (!res.writableEnded) {
-        res.write('event: error\n');
-        res.write(`data: ${JSON.stringify({ error: streamErr?.message || 'Streaming failed' })}\n\n`);
-      }
-    }
-    clearInterval(heartbeat);
-    
-    // --- Post-Streaming Database Operations ---
-    if (!isPaidAndActive) {
+      clearInterval(heartbeat);
+
+      // --- Post-Streaming Database Operations ---
+      if (!isPaidAndActive) {
         const totalTokens = estimateTokenCount(userMessage) + estimateTokenCount(botResponseText);
         const tokensToDeduct = Math.max(totalTokens, modelConfig.baseTokenCost);
         await updateModelTokenBalance(userId, selectedModel, -tokensToDeduct);
         await TokenUsage.create({ userId, tokensUsed: tokensToDeduct, modelUsed: selectedModel });
         await cache.del(`user-status:${userId}`);
-    }
-
-    const friendlyLabel2 = (m => {
-      if (m === 'gpt-4.1-nano') {
-        return process.env.GEMINI_FLASH_MODEL?.includes('2.5') ? 'Gemini 2.5 Flash' : 'Gemini Flash';
       }
-      if (m === 'gpt-4.1-mini') return 'Qwen 30B A3B';
-      if (m === 'gpt-4.1') return 'Qwen 235B A22B';
-      return m;
-    })(selectedModel);
-    await Message.create({ bot: botResponseText, conversationId: conversation.id, timestamp: new Date().toISOString(), fileInfo, modelUsed: selectedModel, metadata: { ...(fileInfo?.metadata||{}), modelLabel: friendlyLabel2 } });
-    await conversation.update({ 
-        lastMessageTimestamp: new Date(), 
-        title: conversation.title === 'New Chat' ? userMessage.substring(0, 30) + '...' : conversation.title 
-    });
-    await cache.del(`conversations:${userId}`);
 
-    logger.info({ action: 'chat_stream_success', userId, conversationId: conversation.id });
-    res.write('data: [DONE]\n\n');
-    res.end();
+      const friendlyLabel2 = (m => {
+        if (m === 'gpt-4.1-nano') {
+          return process.env.GEMINI_FLASH_MODEL?.includes('2.5') ? 'Gemini 2.5 Flash' : 'Gemini Flash';
+        }
+        if (m === 'gpt-4.1-mini') return 'Qwen 30B A3B';
+        if (m === 'gpt-4.1') return 'Qwen 235B A22B';
+        return m;
+      })(selectedModel);
+      await Message.create({ bot: botResponseText, conversationId: conversation.id, timestamp: new Date().toISOString(), fileInfo, modelUsed: selectedModel, metadata: { ...(fileInfo?.metadata || {}), modelLabel: friendlyLabel2 } });
+      await conversation.update({
+        lastMessageTimestamp: new Date(),
+        title: conversation.title === 'New Chat' ? userMessage.substring(0, 30) + '...' : conversation.title
+      });
+      await cache.del(`conversations:${userId}`);
 
-  } catch (error) {
-    logger.error({ action: 'chat_stream_error', userId: req.user.id, error: error.message });
-    // If headers are not yet sent, send a proper error response
-    if (!res.headersSent) {
+      logger.info({ action: 'chat_stream_success', userId, conversationId: conversation.id });
+      res.write('data: [DONE]\n\n');
+      res.end();
+
+    } catch (error) {
+      logger.error({ action: 'chat_stream_error', userId: req.user.id, error: error.message });
+      // If headers are not yet sent, send a proper error response
+      if (!res.headersSent) {
         res.status(500).json({ error: 'An internal error occurred.' });
-    } else {
+      } else {
         // If stream has started, write an error chunk and end
-        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);        res.write('data: [DONE]\n\n');
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`); res.write('data: [DONE]\n\n');
 
         res.end();
+      }
     }
-  }
-});
+  });
 
 /**
  * @swagger
@@ -1209,7 +1219,7 @@ app.get('/api/v1/memory', auth, async (req, res, next) => {
     const includeExpired = req.query.includeExpired === 'true';
     const cacheKey = `memory:${req.user.id}:includeExpired=${includeExpired}`;
     let cachedMemory = await cache.get(cacheKey);
-    
+
     if (cachedMemory) {
       return res.json(cachedMemory);
     }
@@ -1218,10 +1228,10 @@ app.get('/api/v1/memory', auth, async (req, res, next) => {
       ? { userId: req.user.id }
       : { userId: req.user.id, [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] };
     const memories = await Memory.findAll({ where, order: [['timestamp', 'DESC']] });
-    
+
     // Cache the result for 30 seconds
     await cache.set(cacheKey, memories, 30);
-    
+
     res.json(memories);
   } catch (error) {
     next(error);
@@ -1315,13 +1325,13 @@ app.put('/api/v1/memory/:id', auth, [
       if (typeof category === 'string') memory.category = category;
       if (typeof expiresAt === 'string') memory.expiresAt = new Date(expiresAt);
       await memory.save();
-      
+
       // Invalidate memory cache
       await Promise.all([
         cache.del(`memory:${req.user.id}:includeExpired=true`),
         cache.del(`memory:${req.user.id}:includeExpired=false`)
       ]);
-      
+
       res.json(memory);
     } else {
       const err = new Error('Memory not found');
@@ -1342,7 +1352,7 @@ app.delete('/api/v1/memory/:id', auth, param('id').isUUID().withMessage('invalid
     if (deleted) {
       // Invalidate memory cache
       await cache.del(`memory:${req.user.id}`);
-      
+
       res.status(204).send(); // No Content
     } else {
       const err = new Error('Memory not found');
@@ -1407,8 +1417,8 @@ app.post('/api/v1/ad-view', auth, body('preferredModel').optional().isIn(['gpt-4
       completed: true,
     });
 
-    res.json({ 
-      msg: 'Tokens granted successfully', 
+    res.json({
+      msg: 'Tokens granted successfully',
       newBalance: newBalance,
       tokensGranted: tokensToGrant,
       modelUsed: preferredModel
@@ -1508,7 +1518,7 @@ app.get('/api/v1/user-status', auth, async (req, res, next) => {
     // Try to get from cache first
     const cacheKey = `user-status:v2:${req.user.id}`;
     let cachedStatus = await cache.get(cacheKey);
-    
+
     if (cachedStatus) {
       return res.json(cachedStatus);
     }
@@ -1754,10 +1764,10 @@ const startServer = async () => {
   try {
     // Connect to database
     await connectDB();
-    
+
     // Setup model associations
     setupAssociations();
-    
+
     // Prefer migrations in production; optionally allow sync in dev
     if (env.ALLOW_DB_SYNC) {
       // Use sync with alter: true but with force: false to be more conservative
@@ -1769,14 +1779,14 @@ const startServer = async () => {
       await runMigrations();
       console.log('✅ Database migrations applied');
     }
-    
+
     // Start server
-  const server = app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`🚀 Backend server listening at http://localhost:${port}`);
       console.log(`📚 API Documentation available at http://localhost:${port}/api-docs`);
       console.log(`💾 Database: ${process.env.DB_NAME} on ${process.env.DB_HOST}`);
     });
-    
+
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.log('Shutting down gracefully...');

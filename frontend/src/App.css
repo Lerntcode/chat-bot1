@@ -2827,3 +2827,86 @@ body.light-theme {
     transform: translate(24px, 0);
   }
 }
+
+/* --- Coding Mode Layout --- */
+.coding-mode-container {
+  height: 100vh;
+  margin: 0 !important;
+  overflow: hidden;
+  background-color: var(--primary-bg);
+}
+
+.chat-panel {
+  height: 100%;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-panel .chat-messages {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.editor-panel {
+  height: 100%;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  background-color: #1e1e1e; /* VS Code dark bg */
+}
+
+.editor-controls {
+  padding: 10px;
+  background-color: var(--secondary-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.language-select {
+  max-width: 200px;
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.action-buttons {
+  padding: 15px;
+  background-color: var(--secondary-bg);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.chat-bubble {
+  max-width: 85%;
+  margin-bottom: 15px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.5;
+  font-size: 15px;
+  position: relative;
+  word-wrap: break-word;
+}
+
+.user-bubble {
+  align-self: flex-end;
+  background-color: var(--chat-user-bubble);
+  color: var(--chat-user-text);
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+}
+
+.bot-bubble {
+  align-self: flex-start;
+  background-color: var(--chat-bot-bubble);
+  color: var(--chat-text);
+  margin-right: auto;
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--border-color);
+}

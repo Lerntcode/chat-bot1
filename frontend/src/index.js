@@ -7,7 +7,7 @@ import reportWebVitals from './reportWebVitals';
 import { BrowserRouter } from 'react-router-dom';
 import { NotificationProvider, setNotificationContext } from './components/NotificationSystem';
 // Basic CSP for frontend as defense-in-depth when served statically
-const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; connect-src 'self' http://localhost:5000";
+const csp = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net blob:; worker-src 'self' blob:; connect-src 'self' http://localhost:5000 ws: wss: https://cdn.jsdelivr.net;";
 const meta = document.createElement('meta');
 meta.httpEquiv = 'Content-Security-Policy';
 meta.content = csp;

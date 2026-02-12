@@ -49,7 +49,7 @@ export const parseApiError = (error) => {
   }
 
   const { status, data } = error.response;
-  
+
   // Parse error from API response
   if (data && data.error) {
     return {
@@ -113,31 +113,31 @@ export const showErrorNotification = (error, options = {}) => {
  */
 export const handleApiError = async (apiCall, maxRetries = 3, delay = 1000) => {
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await apiCall();
     } catch (error) {
       lastError = error;
       const parsedError = parseApiError(error);
-      
+
       // Don't retry on certain error types
-      if (parsedError.type === ErrorTypes.AUTHENTICATION || 
-          parsedError.type === ErrorTypes.AUTHORIZATION ||
-          parsedError.type === ErrorTypes.VALIDATION) {
+      if (parsedError.type === ErrorTypes.AUTHENTICATION ||
+        parsedError.type === ErrorTypes.AUTHORIZATION ||
+        parsedError.type === ErrorTypes.VALIDATION) {
         throw error;
       }
-      
+
       // Log retry attempt
       console.warn(`API call failed (attempt ${attempt}/${maxRetries}):`, parsedError);
-      
+
       if (attempt < maxRetries) {
         // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, delay * attempt));
       }
     }
   }
-  
+
   throw lastError;
 };
 
@@ -146,40 +146,40 @@ export const handleApiError = async (apiCall, maxRetries = 3, delay = 1000) => {
  */
 export const validateFormData = (data, rules) => {
   const errors = {};
-  
+
   Object.keys(rules).forEach(field => {
     const value = data[field];
     const fieldRules = rules[field];
-    
+
     // Required validation
     if (fieldRules.required && (!value || value.trim() === '')) {
       errors[field] = `${field} is required`;
       return;
     }
-    
+
     // Skip other validations if field is empty and not required
     if (!value || value.trim() === '') return;
-    
+
     // Min length validation
     if (fieldRules.minLength && value.length < fieldRules.minLength) {
       errors[field] = `${field} must be at least ${fieldRules.minLength} characters`;
     }
-    
+
     // Max length validation
     if (fieldRules.maxLength && value.length > fieldRules.maxLength) {
       errors[field] = `${field} must be no more than ${fieldRules.maxLength} characters`;
     }
-    
+
     // Email validation
     if (fieldRules.email && !isValidEmail(value)) {
       errors[field] = 'Please enter a valid email address';
     }
-    
+
     // Pattern validation
     if (fieldRules.pattern && !fieldRules.pattern.test(value)) {
       errors[field] = fieldRules.message || `${field} format is invalid`;
     }
-    
+
     // Custom validation
     if (fieldRules.custom) {
       const customError = fieldRules.custom(value, data);
@@ -188,7 +188,7 @@ export const validateFormData = (data, rules) => {
       }
     }
   });
-  
+
   return {
     isValid: Object.keys(errors).length === 0,
     errors
@@ -210,7 +210,7 @@ export const handleErrorBoundaryError = (error, errorInfo) => {
   // Log error details
   console.error('Error Boundary Error:', error);
   console.error('Error Info:', errorInfo);
-  
+
   // Send to error reporting service in production
   if (process.env.NODE_ENV === 'production') {
     // You can integrate with services like Sentry, LogRocket, etc.
@@ -239,12 +239,27 @@ export const setupGlobalErrorHandling = () => {
     });
   });
 
-  // Handle uncaught errors
   window.addEventListener('error', (event) => {
-    console.error('Uncaught Error:', event.error);
+    // Filter out ResizeObserver loop limit exceeded errors (harmless)
+    if (event.message === 'ResizeObserver loop limit exceeded') return;
+
+    let errorDetails = event.message || 'Unknown error';
+
+    // Inspect the error object if it's a generic Event
+    if (event.error && event.error.constructor && event.error.constructor.name === 'Event') {
+      const target = event.error.target;
+      errorDetails = `Event Error: type=${event.error.type}, target=${target ? (target.tagName || target.constructor.name) : 'unknown'}`;
+      if (target instanceof HTMLImageElement) errorDetails += ` (Image src: ${target.src})`;
+      if (target instanceof HTMLScriptElement) errorDetails += ` (Script src: ${target.src})`;
+    } else if (event.error) {
+      errorDetails = event.error.message || String(event.error);
+    }
+
+    console.error('Global Uncaught Error:', errorDetails, event);
+
     showErrorNotification({
       type: ErrorTypes.UNKNOWN,
-      message: 'An unexpected error occurred'
+      message: 'An unexpected application error occurred'
     });
   });
 };
@@ -269,10 +284,10 @@ export const createError = (message, type = ErrorTypes.UNKNOWN, context = {}) =>
 export const debouncedErrorLog = (() => {
   let timeoutId;
   const errors = [];
-  
+
   return (error) => {
     errors.push(error);
-    
+
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       if (errors.length > 0) {

@@ -608,6 +608,10 @@ const App = () => {
     recognition.onend = () => {
       setIsRecording(false);
     };
+    recognition.onerror = (event) => {
+      console.warn('Speech recognition error:', event.error);
+      setIsRecording(false);
+    };
     return () => {
       recognition.stop();
     };
@@ -651,7 +655,7 @@ const App = () => {
   }, [isAuthenticated, convPage, convLimit]);
 
   // Main message sending handler - must be defined before other functions that depend on it
-  const handleSendMessage = useCallback(async (userQuery) => {
+  const handleSendMessage = useCallback(async (userQuery, options = {}) => {
     if ((!userQuery && !selectedFile) || isSending) return;
 
     const userMessage = {
@@ -661,6 +665,15 @@ const App = () => {
       isUserMessage: true,
       tokenMeter: { total: estimateTokens(userQuery || '') }
     };
+
+    // If local only, just add the message and return
+    if (options.isLocal) {
+      setCurrentConversation(prev => ({
+        ...prev,
+        messages: [...(prev.messages || []), userMessage]
+      }));
+      return;
+    }
 
     setMessage('');
     setIsSending(true);
