@@ -10,7 +10,7 @@ const checkUserStatus = async (email) => {
     console.log('Connected to the database successfully');
 
     // Find the user by email
-    const user = await User.findByPk('d40d1105-f9b4-4e72-b00b-a7dd8ff89088');
+    const user = await User.findOne({ where: { email } });
 
     if (!user) {
       console.log(`User with email ${email} not found in the database`);

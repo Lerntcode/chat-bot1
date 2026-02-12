@@ -32,7 +32,7 @@
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.9.1",
     "multer": "^2.0.1",
-    "mysql2": "^3.14.1",
+    "mysql2": "^3.17.0",
     "openai": "^5.10.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
@@ -54,5 +54,8 @@
     "winston": "^3.17.0",
     "xss": "^1.0.15",
     "xss-clean": "^0.1.4"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
   }
 }

@@ -75,10 +75,10 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
 
     setDisplayedText('');
     setCurrentIndex(0);
-    
+
     const words = text.split(' ');
     let wordIndex = 0;
-    
+
     const timer = setInterval(() => {
       if (wordIndex < words.length) {
         setDisplayedText(prev => prev + (wordIndex === 0 ? '' : ' ') + words[wordIndex]);
@@ -102,12 +102,12 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
   // If showing dots (bot thinking), show dots animation
   if (showDots) {
     return (
-      <span className="chat-bubble bot-bubble typing-effect" ref={ref} style={{ 
+      <span className="chat-bubble bot-bubble typing-effect" ref={ref} style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif', 
-        fontSize: '1.08rem', 
+        fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif',
+        fontSize: '1.08rem',
         lineHeight: 1.6,
         padding: '8px 12px',
         minWidth: '40px'
@@ -119,10 +119,10 @@ const TypingEffect = ({ text, isTyping = true, showDots = false }) => {
 
   // Show typing text
   return (
-    <span className="chat-bubble bot-bubble" ref={ref} style={{ 
-      display: 'inline-block', 
-      fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif', 
-      fontSize: '1.08rem', 
+    <span className="chat-bubble bot-bubble" ref={ref} style={{
+      display: 'inline-block',
+      fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif',
+      fontSize: '1.08rem',
       lineHeight: 1.6,
       padding: '8px 12px'
     }}>
@@ -200,250 +200,250 @@ const ChatInput = React.memo(({ message, setMessage, isSending, handleSendMessag
   };
 
   return (
-  <div className="container_chat_bot" role="form" aria-label="Chat input" style={inputStyle}>
-    <div className="container-chat-options">
-      <div className="chat">
-        <div className="chat-bot">
-          <textarea
-            id="chat_bot"
-            name="chat_bot"
-            placeholder={isSending ? 'Sending...' : (modePrompts && mode && modePrompts[mode] ? modePrompts[mode] : 'Imagine Something...✦˚')}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (!isSending && message.trim()) handleSendMessage(message);
-              }
-            }}
-            aria-label="Type your message here"
-            rows={1}
-            disabled={isSending}
-          />
-        </div>
-        {selectedFile && (
-          <div className="selected-file" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 8px' }}>
-            <div className="file-info" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <i className="fas fa-file"></i>
-              <span className="file-name">{selectedFile.name}</span>
-              <span className="file-size">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+    <div className="container_chat_bot" role="form" aria-label="Chat input" style={inputStyle}>
+      <div className="container-chat-options">
+        <div className="chat">
+          <div className="chat-bot">
+            <textarea
+              id="chat_bot"
+              name="chat_bot"
+              placeholder={isSending ? 'Sending...' : (modePrompts && mode && modePrompts[mode] ? modePrompts[mode] : 'Imagine Something...✦˚')}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isSending && message.trim()) handleSendMessage(message);
+                }
+              }}
+              aria-label="Type your message here"
+              rows={1}
+              disabled={isSending}
+            />
+          </div>
+          {selectedFile && (
+            <div className="selected-file" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 8px' }}>
+              <div className="file-info" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <i className="fas fa-file"></i>
+                <span className="file-name">{selectedFile.name}</span>
+                <span className="file-size">({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+              </div>
+              <button onClick={() => setSelectedFile(null)} disabled={isSending} aria-label="Remove selected file" style={{ background: 'transparent', border: 'none', color: '#bbb', cursor: 'pointer' }}>&times;</button>
             </div>
-            <button onClick={() => setSelectedFile(null)} disabled={isSending} aria-label="Remove selected file" style={{ background: 'transparent', border: 'none', color: '#bbb', cursor: 'pointer' }}>&times;</button>
+          )}
+          <div className="options">
+            <div className="btns-add">
+              {/* Upload button */}
+              <button onClick={!isSending ? handlePlusClick : undefined} aria-label="Attach a file" disabled={isSending}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" role="img" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8v8a5 5 0 1 0 10 0V6.5a3.5 3.5 0 1 0-7 0V15a2 2 0 0 0 4 0V8"></path>
+                </svg>
+              </button>
+              {/* Grid icon (visual only) */}
+              <button type="button" aria-label="Apps" disabled={isSending}>
+                <svg viewBox="0 0 24 24" height="20" width="20" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                  <path d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm0 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zm0-8h6m-3-3v6" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" stroke="currentColor" fill="none"></path>
+                </svg>
+              </button>
+              {/* Globe icon (visual only) */}
+              <button type="button" aria-label="Globe" disabled={isSending}>
+                <svg viewBox="0 0 24 24" height="20" width="20" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                  <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10s-4.477 10-10 10m-2.29-2.333A17.9 17.9 0 0 1 8.027 13H4.062a8.01 8.01 0 0 0 5.648 6.667M10.03 13c.151 2.439.848 4.73 1.97 6.752A15.9 15.9 0 0 0 13.97 13zm9.908 0h-3.965a17.9 17.9 0 0 1-1.683 6.667A8.01 8.01 0 0 0 19.938 13M4.062 11h3.965A17.9 17.9 0 0 1 9.71 4.333A8.01 8.01 0 0 0 4.062 11m5.969 0h3.938A15.9 15.9 0 0 0 12 4.248A15.9 15.9 0 0 0 10.03 11m4.259-6.667A17.9 17.9 0 0 1 15.973 11h3.965a8.01 8.01 0 0 0-5.648-6.667" fill="currentColor"></path>
+                </svg>
+              </button>
+            </div>
+            <button className="btn-submit" onClick={!isSending && message.trim() ? () => handleSendMessage(message) : undefined} aria-label="Send message" disabled={isSending || !message.trim()}>
+              <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                <path fill="#d1d5db" d="M7.233 20.987L21.29 13.88c1.482-.74 1.482-3.02 0-3.76L7.233 3.013A2 2 0 0 0 4.36 4.77l1.1 3.3a2 2 0 0 0 1.9 1.38h7.89c.62 0 .88.8.32 1.14L7.177 15.8a2 2 0 0 0-.92 1.11l-1.11 3.34a2 2 0 0 0 2.096 2.737z"></path>
+              </svg>
+            </button>
           </div>
-        )}
-        <div className="options">
-          <div className="btns-add">
-            {/* Upload button */}
-            <button onClick={!isSending ? handlePlusClick : undefined} aria-label="Attach a file" disabled={isSending}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" role="img" aria-hidden="true">
-                <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8v8a5 5 0 1 0 10 0V6.5a3.5 3.5 0 1 0-7 0V15a2 2 0 0 0 4 0V8"></path>
-              </svg>
-            </button>
-            {/* Grid icon (visual only) */}
-            <button type="button" aria-label="Apps" disabled={isSending}>
-              <svg viewBox="0 0 24 24" height="20" width="20" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-                <path d="M4 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm0 10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zm10 0a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zm0-8h6m-3-3v6" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" stroke="currentColor" fill="none"></path>
-              </svg>
-            </button>
-            {/* Globe icon (visual only) */}
-            <button type="button" aria-label="Globe" disabled={isSending}>
-              <svg viewBox="0 0 24 24" height="20" width="20" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-                <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10s-4.477 10-10 10m-2.29-2.333A17.9 17.9 0 0 1 8.027 13H4.062a8.01 8.01 0 0 0 5.648 6.667M10.03 13c.151 2.439.848 4.73 1.97 6.752A15.9 15.9 0 0 0 13.97 13zm9.908 0h-3.965a17.9 17.9 0 0 1-1.683 6.667A8.01 8.01 0 0 0 19.938 13M4.062 11h3.965A17.9 17.9 0 0 1 9.71 4.333A8.01 8.01 0 0 0 4.062 11m5.969 0h3.938A15.9 15.9 0 0 0 12 4.248A15.9 15.9 0 0 0 10.03 11m4.259-6.667A17.9 17.9 0 0 1 15.973 11h3.965a8.01 8.01 0 0 0-5.648-6.667" fill="currentColor"></path>
-              </svg>
-            </button>
-          </div>
-          <button className="btn-submit" onClick={!isSending && message.trim() ? () => handleSendMessage(message) : undefined} aria-label="Send message" disabled={isSending || !message.trim()}>
-            <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-              <path fill="#d1d5db" d="M7.233 20.987L21.29 13.88c1.482-.74 1.482-3.02 0-3.76L7.233 3.013A2 2 0 0 0 4.36 4.77l1.1 3.3a2 2 0 0 0 1.9 1.38h7.89c.62 0 .88.8.32 1.14L7.177 15.8a2 2 0 0 0-.92 1.11l-1.11 3.34a2 2 0 0 0 2.096 2.737z"></path>
-            </svg>
-          </button>
         </div>
       </div>
-    </div>
-    {/* Quick actions outside the input box */}
-    <div className="tags" aria-label="Quick actions">
-      {mode && modePrompts && modePrompts[mode] && (
-        <span tabIndex={0} onClick={() => setMessage(modePrompts[mode])} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(modePrompts[mode]); }} aria-label={`Use ${mode} prompt`}>
-          Use {mode} prompt
+      {/* Quick actions outside the input box */}
+      <div className="tags" aria-label="Quick actions">
+        {mode && modePrompts && modePrompts[mode] && (
+          <span tabIndex={0} onClick={() => setMessage(modePrompts[mode])} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(modePrompts[mode]); }} aria-label={`Use ${mode} prompt`}>
+            Use {mode} prompt
+          </span>
+        )}
+        <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'Create an image of...')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'Create an image of...'); }} aria-label="Create An Image">
+          Create An Image
         </span>
-      )}
-      <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'Create an image of...')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'Create an image of...'); }} aria-label="Create An Image">
-        Create An Image
-      </span>
-      <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'Analyze this data: ')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'Analyze this data: '); }} aria-label="Analyse Data">
-        Analyse Data
-      </span>
-      <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'More: ')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'More: '); }} aria-label="More">
-        More
-      </span>
+        <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'Analyze this data: ')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'Analyze this data: '); }} aria-label="Analyse Data">
+          Analyse Data
+        </span>
+        <span tabIndex={0} onClick={() => setMessage(prev => prev ? prev : 'More: ')} onKeyDown={(e) => { if (e.key === 'Enter') setMessage(prev => prev ? prev : 'More: '); }} aria-label="More">
+          More
+        </span>
+      </div>
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+        disabled={isSending}
+        accept={supportedFormats.map(format => `.${format}`).join(',')}
+      />
     </div>
-    {/* Hidden file input */}
-    <input 
-      type="file" 
-      ref={fileInputRef} 
-      onChange={handleFileChange} 
-      style={{ display: 'none' }} 
-      disabled={isSending}
-      accept={supportedFormats.map(format => `.${format}`).join(',')}
-    />
-  </div>
   );
 });
 
 // Move ChatMessage above App
-  const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation, editingMessageId, editingText, setEditingText, startEditMessage, saveEditResend, cancelEdit, onToggleReaction }) => (
-    <AnimatedMessage key={chat.id || chat._id || chat.timestamp || index} isNew={isLastMessage}>
-      {/* User Message */}
-      {(chat.user || chat.isUserMessage) && (
-        <div className="d-flex justify-content-end mb-3">
-          <div className="user-message p-3 rounded style-gradient" role="article" aria-label="User message" tabIndex={0}>
-            {chat.tokenMeter && (
-              <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'right' }}>
-                ≈ {chat.tokenMeter.total || 0} tok
+const ChatMessage = React.memo(({ chat, index, isLastMessage, availableModels, selectedModel, setCurrentConversation, conversationId, handleSummarizeConversation, editingMessageId, editingText, setEditingText, startEditMessage, saveEditResend, cancelEdit, onToggleReaction }) => (
+  <AnimatedMessage key={chat.id || chat._id || chat.timestamp || index} isNew={isLastMessage}>
+    {/* User Message */}
+    {(chat.user || chat.isUserMessage) && (
+      <div className="d-flex justify-content-end mb-3">
+        <div className="user-message p-3 rounded style-gradient" role="article" aria-label="User message" tabIndex={0}>
+          {chat.tokenMeter && (
+            <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'right' }}>
+              ≈ {chat.tokenMeter.total || 0} tok
+            </div>
+          )}
+          {editingMessageId === chat.id ? (
+            <div className="edit-container">
+              <textarea
+                value={editingText}
+                onChange={(e) => setEditingText(e.target.value)}
+                className="form-control mb-2"
+                rows={3}
+                style={{ background: 'var(--input-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}
+                aria-label="Edit your message"
+                placeholder="Edit your message..."
+              />
+              <div className="d-flex gap-2" role="group" aria-label="Edit message actions">
+                <EnhancedButton
+                  size="sm"
+                  onClick={saveEditResend}
+                  aria-label="Save changes and resend message"
+                >
+                  Save & Resend
+                </EnhancedButton>
+                <EnhancedButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={cancelEdit}
+                  aria-label="Cancel editing"
+                >
+                  Cancel
+                </EnhancedButton>
               </div>
-            )}
-            {editingMessageId === chat.id ? (
-              <div className="edit-container">
-                <textarea
-                  value={editingText}
-                  onChange={(e) => setEditingText(e.target.value)}
-                  className="form-control mb-2"
-                  rows={3}
-                  style={{ background: 'var(--input-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}
-                  aria-label="Edit your message"
-                  placeholder="Edit your message..."
-                />
-                <div className="d-flex gap-2" role="group" aria-label="Edit message actions">
-                  <EnhancedButton
-                    size="sm"
-                    onClick={saveEditResend}
-                    aria-label="Save changes and resend message"
-                  >
-                    Save & Resend
-                  </EnhancedButton>
-                  <EnhancedButton
-                    variant="secondary"
-                    size="sm"
-                    onClick={cancelEdit}
-                    aria-label="Cancel editing"
-                  >
-                    Cancel
-                  </EnhancedButton>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="message-content-wrapper">
-                  <div>
-                    <strong>You:</strong> <span dangerouslySetInnerHTML={{ __html: sanitizeContent(chat.user || chat.message) }} />
-                    {chat.edited && <small className="ms-2 text-muted" aria-label="This message was edited">(edited)</small>}
-                  </div>
-                  <div className="user-message-actions">
-                    <button
-                      className="icon-button"
-                      aria-label="Edit message"
-                      title="Edit & resend"
-                      onClick={() => startEditMessage(chat)}
-                    >
-                      <i className="fas fa-pen"></i>
-                    </button>
-                    <div className="reactions-bar">
-                      {['up','down','smile'].map(k => (
-                        <button
-                          key={k}
-                          className={`reaction-btn ${chat.userReaction === k ? 'active' : ''}`}
-                          onClick={() => onToggleReaction && onToggleReaction(chat.id, k)}
-                          aria-pressed={chat.userReaction === k}
-                          title={k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'}
-                        >
-                          {k === 'up' ? '👍' : k === 'down' ? '👎' : '🙂'}
-                          <span className="count">{(chat.reactions && chat.reactions[k]) || 0}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-      {/* Assistant Message */}
-      {(chat.bot || chat.isTyping) && (
-        <div className="d-flex justify-content-start mb-3">
-          <div className="assistant-message p-3 rounded style-gradient" role="article" aria-label="Assistant message" tabIndex={0}>
-            {chat.tokenMeter && (
-              <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8 }}>
-                <span>
-                  ≈ {chat.tokenMeter.total || 0} tok
-                  {chat.isTyping && <span> (streaming)</span>}
-                </span>
-              </div>
-            )}
-            {chat.isTyping ? (
-              <TypingIndicator modelName={chat.metadata?.modelLabel} />
-            ) : (
+            </div>
+          ) : (
+            <>
               <div className="message-content-wrapper">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{sanitizeContent(chat.bot)}</ReactMarkdown>
-                <div className="bot-message-actions">
+                <div>
+                  <strong>You:</strong> <span dangerouslySetInnerHTML={{ __html: sanitizeContent(chat.user || chat.message) }} />
+                  {chat.edited && <small className="ms-2 text-muted" aria-label="This message was edited">(edited)</small>}
+                </div>
+                <div className="user-message-actions">
                   <button
                     className="icon-button"
-                    aria-label="Copy message to clipboard"
-                    title="Copy"
-                    onClick={() => navigator.clipboard.writeText(chat.bot || '')}
+                    aria-label="Edit message"
+                    title="Edit & resend"
+                    onClick={() => startEditMessage(chat)}
                   >
-                    <i className="fas fa-copy" aria-hidden="true"></i>
+                    <i className="fas fa-pen"></i>
                   </button>
-                  <button
-                    className="icon-button"
-                    aria-label="Regenerate this response"
-                    title="Regenerate"
-                    onClick={() => window.__regenerateFromMessageIndex && window.__regenerateFromMessageIndex(index)}
-                  >
-                    <i className="fas fa-rotate-right" aria-hidden="true"></i>
-                  </button>
-                  <div className="reactions-bar" role="group" aria-label="Message reactions">
-                    {['up','down','smile'].map(k => (
+                  <div className="reactions-bar">
+                    {['up', 'down', 'smile'].map(k => (
                       <button
                         key={k}
                         className={`reaction-btn ${chat.userReaction === k ? 'active' : ''}`}
                         onClick={() => onToggleReaction && onToggleReaction(chat.id, k)}
                         aria-pressed={chat.userReaction === k}
-                        aria-label={`${k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'} this message. Current count: ${(chat.reactions && chat.reactions[k]) || 0}`}
                         title={k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'}
                       >
                         {k === 'up' ? '👍' : k === 'down' ? '👎' : '🙂'}
-                        <span className="count" aria-hidden="true">{(chat.reactions && chat.reactions[k]) || 0}</span>
+                        <span className="count">{(chat.reactions && chat.reactions[k]) || 0}</span>
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
-            )}
-            {!chat.isTyping && (
-              <i 
-                className="fas fa-volume-up speaker-icon" 
-                onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}
-                aria-label="Read message aloud"
-                role="button"
-                tabIndex="0"
-              ></i>
-            )}
-            {chat.bot && conversationId && !chat.isTyping && (
-              <Button
-                variant="link"
-                className="summarize-button"
-                onClick={() => handleSummarizeConversation(conversationId)}
-                aria-label="Summarize this conversation"
-              >
-                Summarize Conversation
-              </Button>
-            )}
-          </div>
+            </>
+          )}
         </div>
-      )}
-    </AnimatedMessage>
-  ));
+      </div>
+    )}
+    {/* Assistant Message */}
+    {(chat.bot || chat.isTyping) && (
+      <div className="d-flex justify-content-start mb-3">
+        <div className="assistant-message p-3 rounded style-gradient" role="article" aria-label="Assistant message" tabIndex={0}>
+          {chat.tokenMeter && (
+            <div className="token-meter" style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8 }}>
+              <span>
+                ≈ {chat.tokenMeter.total || 0} tok
+                {chat.isTyping && <span> (streaming)</span>}
+              </span>
+            </div>
+          )}
+          {chat.isTyping ? (
+            <TypingIndicator modelName={chat.metadata?.modelLabel} />
+          ) : (
+            <div className="message-content-wrapper">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{sanitizeContent(chat.bot)}</ReactMarkdown>
+              <div className="bot-message-actions">
+                <button
+                  className="icon-button"
+                  aria-label="Copy message to clipboard"
+                  title="Copy"
+                  onClick={() => navigator.clipboard.writeText(chat.bot || '')}
+                >
+                  <i className="fas fa-copy" aria-hidden="true"></i>
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label="Regenerate this response"
+                  title="Regenerate"
+                  onClick={() => window.__regenerateFromMessageIndex && window.__regenerateFromMessageIndex(index)}
+                >
+                  <i className="fas fa-rotate-right" aria-hidden="true"></i>
+                </button>
+                <div className="reactions-bar" role="group" aria-label="Message reactions">
+                  {['up', 'down', 'smile'].map(k => (
+                    <button
+                      key={k}
+                      className={`reaction-btn ${chat.userReaction === k ? 'active' : ''}`}
+                      onClick={() => onToggleReaction && onToggleReaction(chat.id, k)}
+                      aria-pressed={chat.userReaction === k}
+                      aria-label={`${k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'} this message. Current count: ${(chat.reactions && chat.reactions[k]) || 0}`}
+                      title={k === 'up' ? 'Like' : k === 'down' ? 'Dislike' : 'Smile'}
+                    >
+                      {k === 'up' ? '👍' : k === 'down' ? '👎' : '🙂'}
+                      <span className="count" aria-hidden="true">{(chat.reactions && chat.reactions[k]) || 0}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {!chat.isTyping && (
+            <i
+              className="fas fa-volume-up speaker-icon"
+              onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(chat.bot))}
+              aria-label="Read message aloud"
+              role="button"
+              tabIndex="0"
+            ></i>
+          )}
+          {chat.bot && conversationId && !chat.isTyping && (
+            <Button
+              variant="link"
+              className="summarize-button"
+              onClick={() => handleSummarizeConversation(conversationId)}
+              aria-label="Summarize this conversation"
+            >
+              Summarize Conversation
+            </Button>
+          )}
+        </div>
+      </div>
+    )}
+  </AnimatedMessage>
+));
 
 
 const App = () => {
@@ -589,7 +589,7 @@ const App = () => {
   // One-time cleanup of legacy reduced-motion state
   useEffect(() => {
     document.body.classList.remove('reduced-motion');
-    try { localStorage.removeItem('reducedMotion'); } catch (_) {}
+    try { localStorage.removeItem('reducedMotion'); } catch (_) { }
   }, []);
   useEffect(() => {
     if (!recognition) return;
@@ -632,17 +632,17 @@ const App = () => {
           setHasMoreConversations(convPage < (payload.pagination?.totalPages || 1));
         }
       } catch (error) {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
+        if (error.response && error.response.status === 401) {
+          setIsAuthenticated(false);
+          localStorage.removeItem('token');
           setError(null);
           return;
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
+        } else if (error.response && error.response.status === 429) {
+          alert('You are being rate limited. Please wait and try again.');
+        } else {
           console.error('Detailed error fetching conversations:', error);
           alert('Error fetching conversations. Check the browser console for details.');
-      }
+        }
       } finally {
         setIsLoadingConversations(false);
       }
@@ -724,7 +724,7 @@ const App = () => {
         try {
           const data = await response.json();
           if (data?.error) errMsg = data.error;
-        } catch (_) {}
+        } catch (_) { }
         // Remove messages and surface error
         setCurrentConversation(prev => ({
           ...prev,
@@ -954,17 +954,17 @@ const App = () => {
   }, [setCurrentConversation]);
   useEffect(() => {
     if (!isAuthenticated) return;
-      fetchUserStatus();
+    fetchUserStatus();
   }, [isAuthenticated]);
 
   // Bundle optimization initialization
   useEffect(() => {
     // Initialize performance monitoring
     measurePerformance();
-    
+
     // Preload critical routes after initial load
     preloadRoutes();
-    
+
     // Optimize chunk loading
     optimizeChunkLoading();
   }, []);
@@ -989,7 +989,7 @@ const App = () => {
 
     let startX = 0;
     let startY = 0;
-    
+
     const handleTouchStart = (e) => {
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
@@ -997,15 +997,15 @@ const App = () => {
 
     const handleTouchMove = (e) => {
       if (!startX || !startY) return;
-      
+
       const deltaX = e.touches[0].clientX - startX;
       const deltaY = e.touches[0].clientY - startY;
-      
+
       // Swipe right to open sidebar (from left edge)
       if (startX < 20 && deltaX > 50 && Math.abs(deltaY) < 100) {
         setSidebarOpen(true);
       }
-      
+
       // Swipe left to close sidebar
       if (sidebarOpen && deltaX < -50 && Math.abs(deltaY) < 100) {
         setSidebarOpen(false);
@@ -1116,11 +1116,15 @@ const App = () => {
 
   function fetchUserStatus() {
     axios.get('http://localhost:5000/api/v1/auth/me', {
-          headers: { 'x-auth-token': localStorage.getItem('token') }
+      headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(response => {
         setUserStatus(response.data.data);
-        setModelTokenBalances(response.data.data.tokenBalances || {});
+        const balancesMap = (response.data.data.tokenBalances || []).reduce((acc, item) => {
+          acc[item.modelId] = item.balance;
+          return acc;
+        }, {});
+        setModelTokenBalances(balancesMap);
         setShowNotification(true);
       })
       .catch(error => {
@@ -1140,7 +1144,7 @@ const App = () => {
   function handleConversationClick(conversationId) {
     console.log('handleConversationClick called with:', conversationId);
     axios.get(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
+      headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(response => {
         console.log('API response for conversation:', response.data);
@@ -1148,50 +1152,50 @@ const App = () => {
         console.log('messages array:', response.data.messages);
         const messages = response.data.Messages || response.data.messages || [];
         console.log('Final messages to set:', messages);
-      setCurrentConversation(prev => ({
-        ...prev,
-        id: response.data.id,
+        setCurrentConversation(prev => ({
+          ...prev,
+          id: response.data.id,
           messages: messages,
-        title: response.data.title,
-        lastMessageTimestamp: response.data.lastMessageTimestamp,
-      }));
+          title: response.data.title,
+          lastMessageTimestamp: response.data.lastMessageTimestamp,
+        }));
       })
       .catch(error => {
         console.error('Error in handleConversationClick:', error);
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
+        if (error.response && error.response.status === 401) {
+          setIsAuthenticated(false);
+          localStorage.removeItem('token');
           setError(null);
           return;
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-        alert('Error fetching conversation.');
-      }
+        } else if (error.response && error.response.status === 429) {
+          alert('You are being rate limited. Please wait and try again.');
+        } else {
+          alert('Error fetching conversation.');
+        }
       });
-    }
+  }
 
   function handleDeleteConversation(conversationId) {
     axios.delete(`http://localhost:5000/api/v1/conversations/${conversationId}`, {
-        headers: { 'x-auth-token': localStorage.getItem('token') }
+      headers: { 'x-auth-token': localStorage.getItem('token') }
     })
       .then(() => {
-      setConversations(conversations.filter(conv => conv.id !== conversationId));
-      if (currentConversation.id === conversationId) {
-        setCurrentConversation({ id: null, messages: [] });
-      }
+        setConversations(conversations.filter(conv => conv.id !== conversationId));
+        if (currentConversation.id === conversationId) {
+          setCurrentConversation({ id: null, messages: [] });
+        }
       })
       .catch(error => {
-      if (error.response && error.response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('token');
+        if (error.response && error.response.status === 401) {
+          setIsAuthenticated(false);
+          localStorage.removeItem('token');
           setError(null);
           return;
-      } else if (error.response && error.response.status === 429) {
-        alert('You are being rate limited. Please wait and try again.');
-      } else {
-        alert('Error deleting conversation.');
-      }
+        } else if (error.response && error.response.status === 429) {
+          alert('You are being rate limited. Please wait and try again.');
+        } else {
+          alert('Error deleting conversation.');
+        }
       });
   }
 
@@ -1306,7 +1310,7 @@ const App = () => {
     }, [loadMore]);
 
     return (
-      <div 
+      <div
         ref={scrollRef}
         className="conversation-list-container"
         onScroll={handleScroll}
@@ -1324,7 +1328,7 @@ const App = () => {
             style={{ cursor: 'pointer' }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ 
+              <div style={{
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis'
@@ -1407,7 +1411,7 @@ const App = () => {
     setError(null);
   };
 
-    const handlePlusClick = () => {
+  const handlePlusClick = () => {
     if (isSending) return;
     fileInputRef.current.click();
   };
@@ -1421,7 +1425,7 @@ const App = () => {
     if (isRecording) {
       recognition.stop();
       setIsRecording(false);
-      } else {
+    } else {
       recognition.start();
       setIsRecording(true);
     }
@@ -1472,149 +1476,149 @@ const App = () => {
 
 
   return (
-      <ThemeProvider theme={muiTheme}>
-        <CssBaseline />
-        <div className="d-flex">
-          {/* Mobile overlay: always in DOM for smooth fade */}
-          <div 
-            className={`sidebar-overlay ${isMobile && sidebarOpen ? 'active' : ''}`} 
-            onClick={() => isMobile && setSidebarOpen(false)}
-            aria-label="Close sidebar"
-          />
-          {/* Sidebar: always in DOM; smooth slide via CSS classes */}
-          <div 
-            className={`sidebar ${(isMobile ? sidebarOpen : showSidebar) ? 'open' : 'closed'}`} 
-            role="complementary" 
-            aria-label="Chat history and navigation"
-            aria-hidden={!(isMobile ? sidebarOpen : showSidebar)}
-          >
-              {/* Chat History Section */}
-              <div className="sidebar-section">
-                <h3>Chats</h3>
-                <EnhancedButton 
-                  className="w-100 mb-2" 
-                  onClick={() => setShowUsageDashboard(true)}
-                  aria-label="Open usage dashboard"
+    <ThemeProvider theme={muiTheme}>
+      <CssBaseline />
+      <div className="d-flex">
+        {/* Mobile overlay: always in DOM for smooth fade */}
+        <div
+          className={`sidebar-overlay ${isMobile && sidebarOpen ? 'active' : ''}`}
+          onClick={() => isMobile && setSidebarOpen(false)}
+          aria-label="Close sidebar"
+        />
+        {/* Sidebar: always in DOM; smooth slide via CSS classes */}
+        <div
+          className={`sidebar ${(isMobile ? sidebarOpen : showSidebar) ? 'open' : 'closed'}`}
+          role="complementary"
+          aria-label="Chat history and navigation"
+          aria-hidden={!(isMobile ? sidebarOpen : showSidebar)}
+        >
+          {/* Chat History Section */}
+          <div className="sidebar-section">
+            <h3>Chats</h3>
+            <EnhancedButton
+              className="w-100 mb-2"
+              onClick={() => setShowUsageDashboard(true)}
+              aria-label="Open usage dashboard"
+              style={{
+                background: '#343541',
+                border: 'none',
+                color: '#ECECF1',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.2s ease'
+              }}
+            >
+              <i className="fas fa-chart-bar me-2" aria-hidden="true"></i>
+              <span>Usage Dashboard</span>
+            </EnhancedButton>
+
+            <div className="chat-list-scroll">
+              <ConversationList
+                items={conversations}
+                onClickItem={handleConversationClick}
+                onDeleteItem={handleDeleteConversation}
+                contextMenu={contextMenu}
+                handleContextMenu={handleContextMenu}
+                loadMore={loadMoreConversations}
+                hasMore={hasMoreConversations}
+              />
+            </div>
+          </div>
+
+          {/* Account Section */}
+          <div className="sidebar-section">
+            <h3>Account</h3>
+            <div className="token-logout-container">
+
+              {/* Upgrade Button (for free users) */}
+              {userStatus && !userStatus.isPaidUser && (
+                <Button
+                  className="upgrade-btn w-100 mb-2"
+                  variant="primary"
+                  onClick={() => window.location.href = '/pricing'}
                   style={{
-                    background: '#343541',
+                    background: 'linear-gradient(90deg, #19c37d 0%, #10a37f 100%)',
                     border: 'none',
-                    color: '#ECECF1',
+                    fontWeight: 500,
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'background-color 0.2s ease'
+                    transition: 'opacity 0.2s ease'
                   }}
+                  aria-label="Upgrade to Pro"
                 >
-                  <i className="fas fa-chart-bar me-2" aria-hidden="true"></i>
-                  <span>Usage Dashboard</span>
-                </EnhancedButton>
-                
-                <div className="chat-list-scroll">
-                  <ConversationList 
-                    items={conversations}
-                    onClickItem={handleConversationClick}
-                    onDeleteItem={handleDeleteConversation}
-                    contextMenu={contextMenu}
-                    handleContextMenu={handleContextMenu}
-                    loadMore={loadMoreConversations}
-                    hasMore={hasMoreConversations}
-                  />
-                </div>
-              </div>
+                  <i className="fas fa-crown me-2" aria-hidden="true"></i>
+                  Upgrade to Pro
+                </Button>
+              )}
 
-              {/* Account Section */}
-              <div className="sidebar-section">
-                <h3>Account</h3>
-                <div className="token-logout-container">
+              {/* Memories button (moved from header) */}
+              <Button
+                className="memories-btn w-100 mb-2"
+                variant="outline-secondary"
+                onClick={handleShowMemory}
+                style={{
+                  borderColor: 'rgba(255,255,255,0.2)',
+                  color: '#ECECF1',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  transition: 'background-color 0.2s ease, border-color 0.2s ease'
+                }}
+                aria-label="Open Memories"
+              >
+                <i className="fas fa-brain me-2" aria-hidden="true"></i>
+                Memories
+              </Button>
 
-                  {/* Upgrade Button (for free users) */}
-                  {userStatus && !userStatus.isPaidUser && (
-                    <Button 
-                      className="upgrade-btn w-100 mb-2" 
-                      variant="primary"
-                      onClick={() => window.location.href = '/pricing'}
-                      style={{
-                        background: 'linear-gradient(90deg, #19c37d 0%, #10a37f 100%)',
-                        border: 'none',
-                        fontWeight: 500,
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        transition: 'opacity 0.2s ease'
-                      }}
-                      aria-label="Upgrade to Pro"
-                    >
-                      <i className="fas fa-crown me-2" aria-hidden="true"></i>
-                      Upgrade to Pro
-                    </Button>
-                  )}
-
-                  {/* Memories button (moved from header) */}
-                  <Button 
-                    className="memories-btn w-100 mb-2" 
-                    variant="outline-secondary"
-                    onClick={handleShowMemory}
-                    style={{
-                      borderColor: 'rgba(255,255,255,0.2)',
-                      color: '#ECECF1',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      transition: 'background-color 0.2s ease, border-color 0.2s ease'
-                    }}
-                    aria-label="Open Memories"
-                  >
-                    <i className="fas fa-brain me-2" aria-hidden="true"></i>
-                    Memories
-                  </Button>
-
-                  {/* Logout button */}
-                  <Button 
-                    className="logout-btn w-100" 
-                    variant="outline-secondary"
-                    onClick={handleLogout} 
-                    style={{
-                      borderColor: 'rgba(255,255,255,0.2)',
-                      color: '#ECECF1',
-                      padding: '8px 12px',
-                      borderRadius: '6px',
-                      transition: 'background-color 0.2s ease, border-color 0.2s ease'
-                    }}
-                    aria-label="Logout from application"
-                  >
-                    <i className="fas fa-sign-out-alt me-2" aria-hidden="true"></i>
-                    Logout
-                  </Button>
-                </div>
-              </div>
+              {/* Logout button */}
+              <Button
+                className="logout-btn w-100"
+                variant="outline-secondary"
+                onClick={handleLogout}
+                style={{
+                  borderColor: 'rgba(255,255,255,0.2)',
+                  color: '#ECECF1',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  transition: 'background-color 0.2s ease, border-color 0.2s ease'
+                }}
+                aria-label="Logout from application"
+              >
+                <i className="fas fa-sign-out-alt me-2" aria-hidden="true"></i>
+                Logout
+              </Button>
             </div>
+          </div>
+        </div>
 
-          <div className="container d-flex flex-column vh-100 flex-grow-1 overflow-auto">
-          <div 
-            className="header-row" 
+        <div className="container d-flex flex-column vh-100 flex-grow-1 overflow-auto">
+          <div
+            className="header-row"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 24px', background: '#353744', minHeight: 56 }}
             role="banner"
             aria-label="Application header"
           >
             <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Button 
-                className="modern-button" 
-                style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }} 
+              <Button
+                className="modern-button"
+                style={{ padding: '6px 18px', fontSize: 16, height: 40, borderRadius: 8 }}
                 onClick={() => isMobile ? setSidebarOpen(!sidebarOpen) : setShowSidebar(!showSidebar)}
                 aria-label={isMobile ? 'Toggle mobile sidebar' : 'Toggle sidebar'}
               >
                 {isMobile && <i className="fas fa-bars me-2" aria-hidden="true"></i>}
                 Chats
               </Button>
-                {userStatus && (
+              {userStatus && (
                 <div className="quick-token-display" style={{ display: 'flex', alignItems: 'center', background: '#23272f', borderRadius: 8, padding: '6px 16px', fontSize: 15, height: 40, marginLeft: 4 }}>
                   <span className="quick-token-icon" style={{ fontSize: 18, marginRight: 6 }}>🪙</span>
                   <span className="quick-token-number" style={{ fontWeight: 600, marginRight: 6 }}>{getCurrentModelTokenBalance().toLocaleString()}</span>
                   <span className="quick-model-info" style={{ color: '#aaa', fontSize: 14 }}>
                     {availableModels.find(m => m.id === selectedModel)?.name || 'Unknown'} (~{getCurrentModelMessagesPossible()} msgs)
-                      </span>
-                  </div>
-                )}
+                  </span>
+                </div>
+              )}
               <div className="model-selector-container" style={{ marginLeft: 12 }}>
                 <select
                   value={selectedModel}
@@ -1644,8 +1648,8 @@ const App = () => {
                   id="model-selector"
                 >
                   {availableModels.map(model => (
-                    <option 
-                      key={model.id} 
+                    <option
+                      key={model.id}
                       value={model.id}
                       style={{
                         padding: '8px 16px',
@@ -1683,19 +1687,19 @@ const App = () => {
                   }
                 `}</style>
               </div>
-                    </div>
+            </div>
             <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <button onClick={() => navigate('/mode')} style={{ padding: '6px 18px', borderRadius: 8, background: '#333', color: '#fff', border: 'none', fontWeight: 600, fontSize: 16, height: 40, cursor: 'pointer' }}>
                 Mode
               </button>
               <Link to="/pricing" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-                <Button 
-                  variant="primary" 
-                  className="modern-button" 
-                  style={{ 
-                    padding: '6px 18px', 
-                    fontSize: 16, 
-                    height: 40, 
+                <Button
+                  variant="primary"
+                  className="modern-button"
+                  style={{
+                    padding: '6px 18px',
+                    fontSize: 16,
+                    height: 40,
                     borderRadius: 8,
                     backgroundColor: '#007bff',
                     borderColor: '#007bff',
@@ -1706,12 +1710,12 @@ const App = () => {
                 </Button>
               </Link>
               {userStatus && String(userStatus.planStatus || '').toLowerCase() === 'enterprise' && (
-                <Button 
-                  variant="secondary" 
-                  className="modern-button" 
-                  style={{ 
-                    fontSize: 16, 
-                    height: 40, 
+                <Button
+                  variant="secondary"
+                  className="modern-button"
+                  style={{
+                    fontSize: 16,
+                    height: 40,
                     borderRadius: 8,
                     backgroundColor: '#6c757d',
                     borderColor: '#6c757d',
@@ -1745,7 +1749,7 @@ const App = () => {
                     <CodingMode onSendMessage={handleSendMessage} chatMessages={currentConversation.messages} />
                   </Suspense>
                 ) : (
-                  <div 
+                  <div
                     className="flex-grow-1 rounded shadow-sm chat-window"
                     role="main"
                     aria-label="Chat conversation"
@@ -1757,15 +1761,15 @@ const App = () => {
                         onClose={() => setShowNotification(false)}
                       />
                     )}
-                    <div 
-                      role="log" 
-                      aria-live="polite" 
+                    <div
+                      role="log"
+                      aria-live="polite"
                       aria-label="Chat messages"
                       className="chat-messages-container"
                     >
                       {currentConversation.messages && currentConversation.messages.length > 0 ? memoizedMessages : (
-                        <div 
-                          className="no-messages-placeholder" 
+                        <div
+                          className="no-messages-placeholder"
                           style={{ color: '#aaa', textAlign: 'center', marginTop: 32 }}
                           role="status"
                           aria-label="No messages yet"
@@ -1828,8 +1832,8 @@ const App = () => {
                 {memory.filter(mem => mem.text.toLowerCase().includes(searchTerm.toLowerCase())).map(mem => (
                   <li key={mem.id} className="list-group-item bg-transparent text-light d-flex justify-content-between align-items-center">
                     {editingMemory?.id === mem.id ? (
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         defaultValue={mem.text}
                         onBlur={(e) => handleUpdateMemory(mem.id, e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateMemory(mem.id, e.target.value); }}
@@ -1839,18 +1843,18 @@ const App = () => {
                       <span dangerouslySetInnerHTML={{ __html: sanitizeContent(mem.text) }} />
                     )}
                     <div>
-                      <Button 
-                        variant="outline-light" 
-                        size="sm" 
-                        onClick={() => setEditingMemory(mem)} 
+                      <Button
+                        variant="outline-light"
+                        size="sm"
+                        onClick={() => setEditingMemory(mem)}
                         className="me-2"
                         aria-label={`Edit memory: ${mem.text.substring(0, 50)}...`}
                       >
                         Edit
                       </Button>
-                      <Button 
-                        variant="outline-danger" 
-                        size="sm" 
+                      <Button
+                        variant="outline-danger"
+                        size="sm"
                         onClick={() => handleDeleteMemory(mem.id)}
                         aria-label={`Delete memory: ${mem.text.substring(0, 50)}...`}
                       >
@@ -1870,12 +1874,12 @@ const App = () => {
             </Button>
           </Modal.Footer>
         </Modal>
-        
+
         {/* Admin Panel */}
         <Suspense fallback={null}>
-          <AdminPanel 
-            isVisible={showAdminPanel} 
-            onClose={() => setShowAdminPanel(false)} 
+          <AdminPanel
+            isVisible={showAdminPanel}
+            onClose={() => setShowAdminPanel(false)}
           />
         </Suspense>
 
@@ -1897,7 +1901,7 @@ const App = () => {
           </Modal.Footer>
         </Modal>
       </div>
-      </ThemeProvider>
+    </ThemeProvider>
   );
 }
 

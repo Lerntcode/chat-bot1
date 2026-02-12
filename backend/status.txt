@@ -1,0 +1,45 @@
+﻿[dotenv@17.1.0] injecting env (30) from .env (tip: ΓÜÖ∩╕Å  override existing env vars with { override: true })
+Connected to the database successfully
+User found: No name (khanrabiaonais194@gmail.com)
+Is paid user: true
+Paid until: Mon Jul 21 2025 16:09:22 GMT+0530 (India Standard Time)
+
+All model token balances:
+- gpt-4.1: 100 tokens
+- gpt-4.1-nano: 9468 tokens
+
+Data returned by /api/v1/user-status would be:
+{
+  "id": "f830ca0d-bebb-4c6a-9d6a-7acc53319b32",
+  "email": "khanrabiaonais194@gmail.com",
+  "password": "$2a$10$DsmSUk2oxQp9x9FkCBQyt.zCRDWUC/ZFdeaIyGosKnr8phCL.xhA6",
+  "name": null,
+  "planStatus": "enterprise",
+  "googleId": null,
+  "oauthProvider": null,
+  "oauthProviderId": null,
+  "isPaidUser": true,
+  "paidUntil": "2025-07-21T10:39:22.000Z",
+  "lastLogin": null,
+  "lastLoginAt": null,
+  "isActive": true,
+  "emailVerified": false,
+  "failedLoginAttempts": 0,
+  "lockoutUntil": null,
+  "twoFactorEnabled": false,
+  "twoFactorSecret": null,
+  "twoFactorBackupCodes": null,
+  "metadata": null,
+  "createdAt": "2025-07-11T18:27:55.000Z",
+  "updatedAt": "2025-07-14T10:39:22.000Z",
+  "modelTokenBalances": {
+    "gpt-4.1": 100,
+    "gpt-4.1-nano": 9468
+  },
+  "lowTokenWarning": false,
+  "lowTokenModels": [],
+  "paidExpiryWarning": true,
+  "paidExpiryDaysLeft": -206
+}
+
+Γ£à User status check completed successfully!
